@@ -1,5 +1,5 @@
-// Raithu Alert - Service Worker for Background Rain Notifications
-const CACHE_NAME = 'raithu-alert-v3';
+// Raithu Alert - Service Worker for PWA Offline & Background Rain Notifications
+const CACHE_NAME = 'raithu-alert-v4';
 
 self.addEventListener('install', (event) => {
   // Instantly take over without blocking on external assets
@@ -16,13 +16,31 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Pass-through fetch handler required by Chrome for PWA installability
+self.addEventListener('fetch', (event) => {
+  // Only handle GET requests for navigation/assets
+  if (event.request.method !== 'GET') return;
+  
+  event.respondWith(
+    fetch(event.request).catch(() => {
+      return caches.match(event.request).then((cachedResponse) => {
+        if (cachedResponse) return cachedResponse;
+        if (event.request.mode === 'navigate') {
+          return caches.match('/');
+        }
+        return new Response('Network unavailable', { status: 503, statusText: 'Service Unavailable' });
+      });
+    })
+  );
+});
+
 // Handle Background Push Notifications from Web Push / Backend
 self.addEventListener('push', (event) => {
   let data = {
     title: 'RAIN ALERT – KADLUR',
     body: 'Precipitation update for Kadlur village fields.',
-    icon: '/favicon.svg',
-    badge: '/favicon.svg',
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
     tag: 'kadlur-rain-alert',
     renotify: true
   };
@@ -36,16 +54,20 @@ self.addEventListener('push', (event) => {
     }
   }
 
+  // OS-supported high-priority notification options
+  // Dual-pulse urgent vibration pattern: 500ms buzz, 150ms pause, 500ms buzz, 150ms pause, 800ms buzz
   const options = {
     body: data.body,
-    icon: data.icon || '/favicon.svg',
-    badge: data.badge || '/favicon.svg',
+    icon: data.icon || '/icon-192.png',
+    badge: data.badge || '/icon-192.png',
     tag: data.tag || 'kadlur-rain-alert',
-    vibrate: [200, 100, 200, 100, 400],
+    vibrate: [500, 150, 500, 150, 800],
     requireInteraction: true,
+    silent: false,
     data: {
       dateOfArrival: Date.now(),
-      primaryKey: 1
+      primaryKey: 1,
+      url: '/'
     }
   };
 
@@ -60,10 +82,14 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
       for (let i = 0; i < clientList.length; i++) {
-        if (clientList[i].focused) return clientList[i];
+        const client = clientList[i];
+        if (client.url && 'focus' in client) {
+          return client.focus();
+        }
       }
-      if (clientList.length > 0) return clientList[0].focus();
-      return clients.openWindow('/');
+      if (clients.openWindow) {
+        return clients.openWindow('/');
+      }
     })
   );
 });

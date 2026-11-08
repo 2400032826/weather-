@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Header } from './components/Header';
+import { InstallAppBanner } from './components/InstallAppBanner';
 import { CurrentWeather } from './components/CurrentWeather';
 import { RainWarningStatus } from './components/RainWarningStatus';
 import { NotificationControl } from './components/NotificationControl';
@@ -88,20 +89,43 @@ export function App() {
     return () => clearInterval(bgSyncInterval);
   }, [loadData]);
 
-  // 3. Attention-Grabbing Rapido-Style Rain Alarm trigger on escalated warning (YELLOW, ORANGE, RED)
+  // 3. Attention-Grabbing Rapido-Style Rain Alarm trigger on verified approaching rain (YELLOW, ORANGE, RED)
   useEffect(() => {
     if (!weatherState?.activeAlert) return;
     const alert = weatherState.activeAlert;
-    if (['YELLOW', 'ORANGE', 'RED'].includes(alert.level)) {
-      const isAlarmEnabled = typeof window !== 'undefined'
-        ? localStorage.getItem('raithu_alarm_enabled') !== 'false'
-        : true;
-      if (isAlarmEnabled && rainAlarmPlayer.shouldTriggerForAlert(alert.level, alert.observationTime)) {
-        const vol = parseFloat(localStorage.getItem('raithu_alarm_volume') || '0.8');
-        rainAlarmPlayer.playAlarm(isNaN(vol) ? 0.8 : vol);
-      }
+
+    // Never play siren for GREEN / dry weather or ordinary status messages
+    if (!['YELLOW', 'ORANGE', 'RED'].includes(alert.level)) {
+      return;
     }
-  }, [weatherState?.activeAlert]);
+
+    // Verify rain is actually approaching or detected within monitoring radius
+    const isVerifiedRainApproaching =
+      weatherState.isApproaching ||
+      weatherState.rainDetected ||
+      alert.level === 'ORANGE' ||
+      alert.level === 'RED' ||
+      (alert.level === 'YELLOW' && weatherState.nearestRainDistanceKm != null && weatherState.nearestRainDistanceKm <= 30);
+
+    if (!isVerifiedRainApproaching) {
+      return;
+    }
+
+    // Check independent rain siren preference (separate from push notifications)
+    const isSirenEnabled = typeof window !== 'undefined'
+      ? (localStorage.getItem('raithu_siren_enabled') !== 'false' && localStorage.getItem('raithu_alarm_enabled') !== 'false')
+      : true;
+
+    if (isSirenEnabled && rainAlarmPlayer.shouldTriggerForAlert(alert.level, alert.observationTime)) {
+      const vol = parseFloat(localStorage.getItem('raithu_alarm_volume') || '0.8');
+      rainAlarmPlayer.playAlarm(isNaN(vol) ? 0.8 : vol);
+    }
+  }, [
+    weatherState?.activeAlert,
+    weatherState?.isApproaching,
+    weatherState?.rainDetected,
+    weatherState?.nearestRainDistanceKm
+  ]);
 
   // Persist language selection
   useEffect(() => {
@@ -183,6 +207,9 @@ export function App() {
 
       {/* Main Content Area - Strictly Simplified for Farmers */}
       <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-4 sm:py-6 space-y-5">
+        {/* First-Time Mobile PWA Install Banner (Automatically hidden once installed) */}
+        <InstallAppBanner currentLang={currentLang} />
+
         {isLoading && !weatherState ? (
           /* Loading Skeleton for Slow Mobile Connections */
           <div className="space-y-4 animate-pulse">

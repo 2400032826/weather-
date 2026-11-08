@@ -136,6 +136,15 @@ export interface Translations {
   q3RainDistance: string;
   q4RainArrival: string;
   q5DataFreshness: string;
+
+  // PWA First-Time Installation
+  installAppBtn: string;
+  installAppSubtitle: string;
+  iosInstallTitle: string;
+  iosStep1: string;
+  iosStep2: string;
+  iHaveInstalled: string;
+  closeGuide: string;
 }
 
 export const translations: Record<Language, Translations> = {
@@ -261,7 +270,15 @@ export const translations: Record<Language, Translations> = {
     q2RainComing: "కడ్లూరు వైపు వర్షం వస్తోందా?",
     q3RainDistance: "వర్షం ఎంత దూరంలో ఉంది?",
     q4RainArrival: "ఎప్పుడు చేరే అవకాశం ఉంది?",
-    q5DataFreshness: "సమాచారం ఎంత తాజాది?"
+    q5DataFreshness: "సమాచారం ఎంత తాజాది?",
+
+    installAppBtn: "రైతు అలర్ట్ యాప్ ఇన్‌స్టాల్ చేయండి (INSTALL APP)",
+    installAppSubtitle: "హోమ్ స్క్రీన్‌కు చేర్చి కడ్లూరు వర్ష సమాచారాన్ని ఒక్క క్లిక్‌తో త్వరగా చూడండి",
+    iosInstallTitle: "iPhone లో యాప్ ఎలా ఇన్‌స్టాల్ చేయాలి?",
+    iosStep1: "1. Safari బ్రౌజర్ దిగువన ఉన్న 'షేర్' (Share 📤) గుర్తును తాకండి.",
+    iosStep2: "2. జాబితాలో కిందకు వెళ్లి 'హోమ్ స్క్రీన్‌కు జోడించండి' (Add to Home Screen ➕) నొక్కండి.",
+    iHaveInstalled: "✓ నేను హోమ్ స్క్రీన్‌కు జోడించాను",
+    closeGuide: "మూసివేయండి"
   },
 
   kn: {
@@ -386,7 +403,15 @@ export const translations: Record<Language, Translations> = {
     q2RainComing: "ಕಡ್ಲೂರು ಕಡೆಗೆ ಮಳೆ ಬರುತ್ತಿದೆಯೇ?",
     q3RainDistance: "ಮಳೆ ಎಷ್ಟು ದೂರದಲ್ಲಿದೆ?",
     q4RainArrival: "ಯಾವಾಗ ತಲುಪುವ ಸಾಧ್ಯತೆಯಿದೆ?",
-    q5DataFreshness: "ಮಾಹಿತಿ ಎಷ್ಟು ತಾಜಾವಾಗಿದೆ?"
+    q5DataFreshness: "ಮಾಹಿತಿ ಎಷ್ಟು ತಾಜಾವಾಗಿದೆ?",
+
+    installAppBtn: "ರೈತು ಅಲರ್ಟ್ ಆ್ಯಪ್ ಇನ್‌ಸ್ಟಾಲ್ ಮಾಡಿ (INSTALL APP)",
+    installAppSubtitle: "ಮೊಬೈಲ್‌ನಲ್ಲಿ ವೇಗವಾಗಿ ತೆರೆಯಲು ಹೋಮ್ ಸ್ಕ್ರೀನ್‌ಗೆ ಸೇರಿಸಿ",
+    iosInstallTitle: "iPhone ನಲ್ಲಿ ಆ್ಯಪ್ ಇನ್‌ಸ್ಟಾಲ್ ಮಾಡುವುದು ಹೇಗೆ?",
+    iosStep1: "1. Safari ಕೆಳಭಾಗದಲ್ಲಿರುವ 'ಶೇರ್' (Share 📤) ಐಕಾನ್ ಟ್ಯಾಪ್ ಮಾಡಿ.",
+    iosStep2: "2. ಪಟ್ಟಿಯಲ್ಲಿ ಕೆಳಗೆ ಸ್ಕ್ರಾಲ್ ಮಾಡಿ 'Add to Home Screen' (➕) ಆಯ್ಕೆಮಾಡಿ.",
+    iHaveInstalled: "✓ ನಾನು ಹೋಮ್ ಸ್ಕ್ರೀನ್‌ಗೆ ಸೇರಿಸಿದ್ದೇನೆ",
+    closeGuide: "ಮುಚ್ಚಿ"
   },
 
   en: {
@@ -511,6 +536,14 @@ export const translations: Record<Language, Translations> = {
     q2RainComing: "Is rain approaching Kadlur?",
     q3RainDistance: "How far is the rain?",
     q4RainArrival: "When will it reach Kadlur?",
-    q5DataFreshness: "How fresh is this data?"
+    q5DataFreshness: "How fresh is this data?",
+
+    installAppBtn: "INSTALL RAITHU ALERT APP",
+    installAppSubtitle: "Add to home screen for instant, 1-tap village weather monitoring",
+    iosInstallTitle: "How to Install on iPhone / iPad",
+    iosStep1: "1. Tap the Share button (Share 📤) at the bottom of Safari.",
+    iosStep2: "2. Scroll down and tap 'Add to Home Screen' (➕).",
+    iHaveInstalled: "✓ I have added to Home Screen",
+    closeGuide: "Close"
   }
 };

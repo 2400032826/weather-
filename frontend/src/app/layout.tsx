@@ -5,6 +5,16 @@ export const metadata: Metadata = {
   title: "Raithu Alert | Kadlur Village Weather & Rain Monitoring",
   description:
     "Dedicated mobile-first weather monitoring and Doppler radar rainfall detection exclusively for Kadlur Village, Raichur District, Karnataka, India.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Raithu Alert",
+  },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/icon-192.png",
+  },
   keywords: [
     "Kadlur weather",
     "Raichur Karnataka rain",

@@ -1,0 +1,27 @@
+{
+  "name": "Raithu Alert - Kadlur Weather",
+  "short_name": "Raithu Alert",
+  "description": "Accurate Village-Level Weather & Doppler Radar Rainfall Detection for Kadlur Village, Raichur District, Karnataka",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f1f5f9",
+  "theme_color": "#065f46",
+  "lang": "te",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["weather", "utilities"]
+}
