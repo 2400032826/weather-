@@ -2,19 +2,17 @@ import React from 'react';
 import {
   Wind,
   CloudRain,
-  Sun,
   Clock,
   AlertCircle,
   Droplets,
-  HelpCircle,
   Radio,
-  CheckCircle2,
-  XCircle,
-  Compass
+  Compass,
+  Sun
 } from 'lucide-react';
 import type { Language } from '../lib/translations';
 import { translations } from '../lib/translations';
 import type { KadlurWeatherState } from '../lib/weatherService';
+import { getWeatherIconInfo } from '../lib/weatherIconHelper';
 
 interface CurrentWeatherProps {
   weather: KadlurWeatherState;
@@ -31,28 +29,13 @@ export const CurrentWeather: React.FC<CurrentWeatherProps> = ({ weather, current
     return `${directions[idx]}`;
   };
 
-  // Helper answers for the 5 Core Mobile Questions
-  const isRainingNow = weather.currentRainfall > 0.1;
-  const isRainComing = weather.isApproaching;
-  const rainDistanceText = weather.nearestRainDistanceKm != null
-    ? `${weather.nearestRainDistanceKm.toFixed(1)} km`
-    : currentLang === 'te'
-    ? '30 కి.మీ పరిధిలో లేదు'
-    : currentLang === 'kn'
-    ? '30 ಕಿ.ಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿಲ್ಲ'
-    : 'None within 30 km';
-
-  const rainArrivalText = weather.estimatedArrivalMinutes
-    ? `${weather.estimatedArrivalMinutes} min`
-    : currentLang === 'te'
-    ? 'వర్షం లేదు (స్పష్టం)'
-    : currentLang === 'kn'
-    ? 'ಮಳೆ ಇಲ್ಲ (ಸ್ಪಷ್ಟ)'
-    : 'No rain (Clear)';
-
-  const freshnessLabel = weather.dataDelayMinutes != null
-    ? `${weather.lastUpdated} (${weather.dataDelayMinutes}m ago)`
-    : weather.lastUpdated;
+  // Dynamic Weather Icon based on live WMO weather code & condition
+  const iconInfo = getWeatherIconInfo(
+    weather.weatherCode,
+    weather.conditionText,
+    weather.lastUpdated
+  );
+  const ConditionIcon = iconInfo.Icon;
 
   return (
     <section className="bg-white rounded-3xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-5 overflow-hidden">
@@ -81,7 +64,7 @@ export const CurrentWeather: React.FC<CurrentWeatherProps> = ({ weather, current
         </div>
       </div>
 
-      {/* Main Temperature & Weather Condition */}
+      {/* Main Temperature & Weather Condition with Dynamic Icon */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <div className="flex items-baseline gap-1.5">
@@ -95,14 +78,10 @@ export const CurrentWeather: React.FC<CurrentWeatherProps> = ({ weather, current
           </p>
         </div>
 
-        {/* Condition Badge & Sun/Rain Icon */}
+        {/* Dynamic Condition Badge & Weather Icon */}
         <div className="text-right flex flex-col items-end">
           <div className="flex items-center gap-2 bg-emerald-50 text-emerald-800 px-4 py-2.5 rounded-2xl border border-emerald-200 shadow-sm">
-            {isRainingNow ? (
-              <CloudRain className="w-6 h-6 text-sky-600 shrink-0 animate-bounce" />
-            ) : (
-              <Sun className="w-6 h-6 text-amber-500 shrink-0" />
-            )}
+            <ConditionIcon className={`w-6 h-6 ${iconInfo.colorClass} shrink-0`} />
             <span className="text-base sm:text-lg font-black">
               {weather.conditionText}
             </span>
@@ -113,70 +92,6 @@ export const CurrentWeather: React.FC<CurrentWeatherProps> = ({ weather, current
             <span>{t.lastUpdated}:</span>
             <strong className="text-slate-700">{weather.lastUpdated}</strong>
           </p>
-        </div>
-      </div>
-
-      {/* 5 CRITICAL QUESTIONS STRIP (Farmer-First First-Screen Clarity) */}
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-2">
-        <div className="flex items-center gap-1.5 text-xs font-black text-slate-700 uppercase tracking-wider pb-1 border-b border-slate-200/80">
-          <HelpCircle className="w-4 h-4 text-emerald-600" />
-          <span>కడ్లూరు తక్షణ స్థితి (Quick 5 Answers)</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 pt-1 text-xs">
-          {/* Q1: Is it raining now? */}
-          <div className="bg-white border border-slate-200 rounded-xl p-2.5 flex items-center justify-between sm:flex-col sm:items-start gap-1">
-            <span className="text-slate-500 font-semibold">{t.q1RainNow}</span>
-            <div className="flex items-center gap-1.5 font-black text-sm">
-              {isRainingNow ? (
-                <>
-                  <CheckCircle2 className="w-4 h-4 text-rose-500" />
-                  <span className="text-rose-600">{currentLang === 'te' ? 'అవును' : currentLang === 'kn' ? 'ಹೌದು' : 'YES'}</span>
-                </>
-              ) : (
-                <>
-                  <XCircle className="w-4 h-4 text-emerald-600" />
-                  <span className="text-emerald-700">{currentLang === 'te' ? 'లేదు (వర్షం లేదు)' : currentLang === 'kn' ? 'ಇಲ್ಲ (ಮಳೆ ಇಲ್ಲ)' : 'NO (Dry)'}</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Q2: Is rain coming? */}
-          <div className="bg-white border border-slate-200 rounded-xl p-2.5 flex items-center justify-between sm:flex-col sm:items-start gap-1">
-            <span className="text-slate-500 font-semibold">{t.q2RainComing}</span>
-            <div className="flex items-center gap-1.5 font-black text-sm">
-              {isRainComing ? (
-                <>
-                  <AlertCircle className="w-4 h-4 text-amber-500" />
-                  <span className="text-amber-600">{currentLang === 'te' ? 'వస్తోంది' : currentLang === 'kn' ? 'ಬರುತ್ತಿದೆ' : 'APPROACHING'}</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span className="text-emerald-700">{currentLang === 'te' ? 'రావట్లేదు' : currentLang === 'kn' ? 'ಬರುತ್ತಿಲ್ಲ' : 'NO'}</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Q3: How far is the rain? */}
-          <div className="bg-white border border-slate-200 rounded-xl p-2.5 flex items-center justify-between sm:flex-col sm:items-start gap-1">
-            <span className="text-slate-500 font-semibold">{t.q3RainDistance}</span>
-            <span className="font-black text-sm text-slate-900">{rainDistanceText}</span>
-          </div>
-
-          {/* Q4: When will it reach Kadlur? */}
-          <div className="bg-white border border-slate-200 rounded-xl p-2.5 flex items-center justify-between sm:flex-col sm:items-start gap-1">
-            <span className="text-slate-500 font-semibold">{t.q4RainArrival}</span>
-            <span className="font-black text-sm text-slate-900">{rainArrivalText}</span>
-          </div>
-
-          {/* Q5: How fresh is this data? */}
-          <div className="bg-white border border-slate-200 rounded-xl p-2.5 flex items-center justify-between sm:flex-col sm:items-start gap-1 sm:col-span-2 lg:col-span-1">
-            <span className="text-slate-500 font-semibold">{t.q5DataFreshness}</span>
-            <span className="font-mono font-bold text-xs text-emerald-700">{freshnessLabel}</span>
-          </div>
         </div>
       </div>
 

@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import {
   Clock,
-  CloudRain,
-  Sun,
   ShieldCheck,
 } from 'lucide-react';
 import type { Language } from '../lib/translations';
 import { translations } from '../lib/translations';
 import type { KadlurWeatherState, HourlyForecastItem } from '../lib/weatherService';
+import { getWeatherIconInfo } from '../lib/weatherIconHelper';
 
 interface HourlyTimelineProps {
   weather: KadlurWeatherState;
@@ -113,6 +112,8 @@ export const HourlyTimeline: React.FC<HourlyTimelineProps> = ({ weather, current
             const { hourLabel, dateLabel } = formatIstTime(hour.time);
             const isRain = hour.isRainHour;
             const isCurrent = hour.isCurrentHour || idx === 0;
+            const iconInfo = getWeatherIconInfo(hour.weatherCode, hour.conditionText, hour.time);
+            const HourIcon = iconInfo.Icon;
 
             return (
               <div
@@ -140,13 +141,11 @@ export const HourlyTimeline: React.FC<HourlyTimelineProps> = ({ weather, current
                   </span>
                 </div>
 
-                {/* Weather Icon & Temperature */}
+                {/* Dynamic Weather Icon & Temperature */}
                 <div className="my-2 text-center">
-                  {isRain ? (
-                    <CloudRain className="w-6 h-6 text-orange-500 mx-auto animate-bounce" />
-                  ) : (
-                    <Sun className="w-6 h-6 text-amber-500 mx-auto" />
-                  )}
+                  <div className="w-8 h-8 flex items-center justify-center mx-auto">
+                    <HourIcon className={`w-6 h-6 ${iconInfo.colorClass} ${isRain ? 'animate-bounce' : ''}`} />
+                  </div>
                   <span className="text-base font-black text-slate-900 block mt-1">
                     {Math.round(hour.temperature)}°C
                   </span>

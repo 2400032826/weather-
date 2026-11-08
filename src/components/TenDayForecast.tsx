@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import {
   Calendar,
-  CloudRain,
-  Sun,
   ChevronDown,
   ChevronUp,
   Droplets,
@@ -10,6 +8,7 @@ import {
 import type { Language } from '../lib/translations';
 import { translations } from '../lib/translations';
 import type { DailyForecastItem } from '../lib/weatherService';
+import { getWeatherIconInfo } from '../lib/weatherIconHelper';
 
 interface TenDayForecastProps {
   days: DailyForecastItem[];
@@ -68,6 +67,8 @@ export const TenDayForecast: React.FC<TenDayForecastProps> = ({ days, currentLan
         {days.map((day, idx) => {
           const isRain = day.precipitationMm >= 0.1 || day.precipitationProbability >= 40;
           const isExpanded = expandedIndex === idx;
+          const iconInfo = getWeatherIconInfo(day.weatherCode, day.conditionText, day.date);
+          const DayIcon = iconInfo.Icon;
 
           return (
             <div
@@ -80,10 +81,10 @@ export const TenDayForecast: React.FC<TenDayForecastProps> = ({ days, currentLan
                 onClick={() => toggleDay(idx)}
                 className="p-3.5 flex items-center justify-between gap-3 cursor-pointer select-none"
               >
-                {/* Day & Date */}
+                {/* Day & Date with Dynamic Weather Icon */}
                 <div className="flex items-center gap-3 min-w-[120px]">
-                  <div className={`p-2 rounded-xl ${isRain ? 'bg-orange-100 text-orange-600' : 'bg-emerald-100 text-amber-500'}`}>
-                    {isRain ? <CloudRain className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+                  <div className={`p-2 rounded-xl ${iconInfo.bgClass}`}>
+                    <DayIcon className={`w-5 h-5 ${iconInfo.colorClass}`} />
                   </div>
                   <div>
                     <h3 className="font-bold text-slate-900 text-sm">

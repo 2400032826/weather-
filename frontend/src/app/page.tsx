@@ -10,6 +10,7 @@ import { RainAlarmSettings } from '@/components/RainAlarmSettings';
 import { HourlyTimeline } from '@/components/HourlyTimeline';
 import { TenDayForecast } from '@/components/TenDayForecast';
 import { RainMonitoring } from '@/components/RainMonitoring';
+import { QuickFiveAnswers } from '@/components/QuickFiveAnswers';
 import { DiagnosticsModal } from '@/components/DiagnosticsModal';
 import type { Language } from '@/lib/translations';
 import { translations } from '@/lib/translations';
@@ -243,18 +244,13 @@ export default function Home() {
               currentLang={currentLang}
             />
 
-            {/* 2.D: RAPIDO-STYLE RAIN ALARM SOUND SETTINGS (5s Siren + Test Alarm + Volume) */}
-            <RainAlarmSettings
-              currentLang={currentLang}
-            />
-
-            {/* 3: HOURLY WEATHER (Next 24h, 48h, 10d in simple cards, orange for rain) */}
+            {/* 3: HOURLY WEATHER (Next 24h, 48h, 10d with dynamic icons) */}
             <HourlyTimeline
               weather={weatherState}
               currentLang={currentLang}
             />
 
-            {/* 4: SIMPLE 10-DAY FORECAST (Day/date, max/min, rain probability, mm, icons, tappable) */}
+            {/* 4: SIMPLE 10-DAY FORECAST (Day/date, max/min, rain mm, dynamic icons) */}
             <TenDayForecast
               days={weatherState.daily10d || []}
               currentLang={currentLang}
@@ -267,6 +263,17 @@ export default function Home() {
                 currentLang={currentLang}
               />
             </div>
+
+            {/* 6: QUICK 5 ANSWERS (At-A-Glance Status - Moved to Bottom) */}
+            <QuickFiveAnswers
+              weather={weatherState}
+              currentLang={currentLang}
+            />
+
+            {/* 7: RAPIDO-STYLE LIVE RAIN SIREN ALARM (Immediately following Quick 5 Answers) */}
+            <RainAlarmSettings
+              currentLang={currentLang}
+            />
           </>
         ) : null}
       </main>
