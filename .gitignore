@@ -1,3 +1,16 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build Outputs
+dist
+dist-ssr
+build
+.next/
+out/
+.vercel
+
 # Logs
 logs
 *.log
@@ -7,12 +20,27 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
+# Environment files
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
 
-# Editor directories and files
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Editor directories and OS files
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -22,3 +50,4 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+*.tsbuildinfo
