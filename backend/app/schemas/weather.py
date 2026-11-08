@@ -44,6 +44,7 @@ class WeatherObservationSchema(BaseModel):
     freshness_status: Optional[str] = "Live / Fresh"
     source_name: str
     is_actual_observation: bool = False
+    observation_type: Optional[str] = "NWP Model Estimate"
     data_status: str = "active"
 
 
@@ -89,7 +90,7 @@ class RadarAnalysisSchema(BaseModel):
     estimated_speed_kmh: Optional[float] = None
     nearest_rain_distance_km: Optional[float] = None
     cell_trend: Optional[str] = "STEADY"
-    confidence_score: float = 0.0
+    confidence_score: Optional[float] = None
     radar_observation_time: Optional[datetime] = None
     data_delay_minutes: Optional[int] = None
     frames_count: int = 0
@@ -113,7 +114,7 @@ class AlertSchema(BaseModel):
     source_summary: str
     observation_time: Optional[datetime] = None
     issue_timestamp: datetime
-    confidence_score: float = 0.0
+    confidence_score: Optional[float] = None
     is_active: bool = True
 
 

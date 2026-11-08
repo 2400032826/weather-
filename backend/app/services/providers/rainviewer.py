@@ -8,7 +8,7 @@ from app.core.config import settings
 
 class RainViewerProvider(BaseWeatherProvider):
     provider_id: str = "rainviewer"
-    display_name: str = "RainViewer (IMD Hyderabad Begumpet DWR Composite)"
+    display_name: str = "RainViewer Weather Radar Tile Composite"
     is_free: bool = True
     requires_key: bool = False
     

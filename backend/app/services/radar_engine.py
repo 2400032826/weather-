@@ -1,5 +1,5 @@
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from app.core.config import settings
 from app.services.providers.rainviewer import RainViewerProvider
@@ -43,7 +43,7 @@ class RadarRainfallEngine:
             return {
                 "coverage_status": "UNAVAILABLE",
                 "freshness_status": "Unavailable",
-                "status_message": "Unable to verify approaching rainfall because current radar data is unavailable.",
+                "status_message": "Radar monitoring currently unavailable.",
                 "kadlur_rain_detected": False,
                 "kadlur_intensity_mmh": 0.0,
                 "is_approaching_kadlur": False,
@@ -52,12 +52,12 @@ class RadarRainfallEngine:
                 "estimated_speed_kmh": None,
                 "nearest_rain_distance_km": None,
                 "cell_trend": "UNKNOWN",
-                "confidence_score": 0.0,
+                "confidence_score": None,
                 "radar_observation_time": None,
                 "data_delay_minutes": None,
                 "frames_count": 0,
                 "tile_layers": [],
-                "disclaimer": "Unable to verify approaching rainfall because current radar data is unavailable. Predictions are never fabricated when radar data is insufficient."
+                "disclaimer": "Radar monitoring currently unavailable. Predictions are never fabricated when radar data is insufficient."
             }
 
         past_frames = radar_data.get("past_frames", [])
@@ -70,7 +70,7 @@ class RadarRainfallEngine:
             tile_layers.append({
                 "type": "past",
                 "timestamp": frame["time"],
-                "time_iso": datetime.fromtimestamp(frame["time"]).isoformat(),
+                "time_iso": datetime.fromtimestamp(frame["time"], tz=timezone.utc).isoformat(),
                 "url": f"{host}{frame['path']}/256/7/{tile_z7[0]}/{tile_z7[1]}/2/1_1.png"
             })
             
@@ -78,18 +78,18 @@ class RadarRainfallEngine:
             tile_layers.append({
                 "type": "nowcast",
                 "timestamp": frame["time"],
-                "time_iso": datetime.fromtimestamp(frame["time"]).isoformat(),
+                "time_iso": datetime.fromtimestamp(frame["time"], tz=timezone.utc).isoformat(),
                 "url": f"{host}{frame['path']}/256/7/{tile_z7[0]}/{tile_z7[1]}/2/1_1.png"
             })
 
-        latest_frame_time = datetime.fromtimestamp(past_frames[-1]["time"]) if past_frames else datetime.utcnow()
+        latest_frame_time = datetime.fromtimestamp(past_frames[-1]["time"], tz=timezone.utc) if past_frames else datetime.now(timezone.utc)
         delay_min = radar_data.get("data_delay_minutes", 5)
 
-        # Factual assessment for Kadlur:
+        # Factual assessment for Kadlur (16.3768° N, 77.2870° E):
         return {
             "coverage_status": "OPERATIONAL",
             "freshness_status": radar_data.get("freshness_status", "Live / Fresh"),
-            "status_message": "Doppler radar surveillance operational (IMD Begumpet DWR composite active). No approaching rain echoes detected within 30 km of Kadlur.",
+            "status_message": f"RainViewer radar mosaic active ({len(tile_layers)} sweeps loaded). Ground echoes monitored for Kadlur (16.3768° N, 77.2870° E).",
             "kadlur_rain_detected": False,
             "kadlur_intensity_mmh": 0.0,
             "is_approaching_kadlur": False,
@@ -98,11 +98,11 @@ class RadarRainfallEngine:
             "estimated_speed_kmh": 0.0,
             "nearest_rain_distance_km": None,
             "cell_trend": "STEADY",
-            "confidence_score": 0.94,
+            "confidence_score": None,
             "radar_observation_time": latest_frame_time,
             "data_delay_minutes": delay_min,
             "frames_count": len(tile_layers),
             "tile_layers": tile_layers,
-            "nearest_radar": f"{settings.geo.NEAREST_DWR_NAME} ({settings.geo.NEAREST_DWR_DISTANCE_KM} km)",
-            "disclaimer": "Short-term nowcasting relies strictly on real-time Doppler radar echoes. Predictions are never fabricated when radar data is insufficient."
+            "nearest_radar": "RainViewer Composite Mosaic",
+            "disclaimer": "Short-term nowcasting relies strictly on genuine radar sweeps. Arrival times and warnings are never fabricated without radar evidence."
         }

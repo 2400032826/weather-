@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional
 from app.core.config import settings
 
@@ -17,6 +17,7 @@ class AlertService:
     - Complete details: What is happening, Distance, Estimated time, Source, Observation time, Confidence.
     - Farmer-friendly translations in Telugu (తెలుగు) and Kannada (ಕನ್ನಡ).
     - Prevents false or unsupported warnings.
+    - Never fabricates confidence scores.
     """
 
     TRANSLATIONS = {
@@ -24,7 +25,7 @@ class AlertService:
             "title_en": "No Significant Rain Detected",
             "title_te": "ప్రస్తుతం వర్షం సూచన లేదు",
             "title_kn": "ಯಾವುದೇ ಗಮನಾರ್ಹ ಮಳೆಯ ಮುನ್ಸೂಚನೆ ಇಲ್ಲ",
-            "desc_en": "Doppler radar and atmospheric scans show clear, dry weather within 30 km radius of Kadlur.",
+            "desc_en": "Radar scans and atmospheric models show clear, dry weather within 30 km radius of Kadlur.",
             "desc_te": "కడ్లూరు చుట్టూ 30 కి.మీ పరిధిలో వర్షపు మేఘాలు లేవు. వాతావరణం అనుకూలంగా ఉంది.",
             "desc_kn": "ಕಡ್ಲೂರು ಸುತ್ತಮುತ್ತಲಿನ 30 ಕಿ.ಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿ ಮಳೆ ಮೋಡಗಳಿಲ್ಲ. ಹವಾಮಾನವು ಸಾಮಾನ್ಯವಾಗಿರುತ್ತದೆ."
         },
@@ -59,7 +60,7 @@ class AlertService:
         radar_summary: Dict[str, Any],
         current_weather: Optional[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         alerts = []
 
         is_approaching = radar_summary.get("is_approaching_kadlur", False)
@@ -67,10 +68,12 @@ class AlertService:
         intensity = radar_summary.get("kadlur_intensity_mmh", 0.0)
         arrival_min = radar_summary.get("estimated_arrival_minutes")
         dist_km = radar_summary.get("nearest_rain_distance_km")
+        radar_status = radar_summary.get("coverage_status", "OPERATIONAL")
+        radar_obs_time = radar_summary.get("radar_observation_time", now)
         weather_code = current_weather.get("weather_code") if current_weather else None
 
         # 1. RED Warning: Severe convective thunderstorm or heavy rain
-        if weather_code in [95, 96, 99] or intensity >= settings.HEAVY_RAIN_THRESHOLD_MM:
+        if weather_code in [95, 96, 99] or (intensity and intensity >= settings.HEAVY_RAIN_THRESHOLD_MM):
             t = self.TRANSLATIONS[AlertColorLevels.RED]
             alerts.append({
                 "alert_level": AlertColorLevels.RED,
@@ -83,10 +86,10 @@ class AlertService:
                 "distance_km": dist_km if dist_km is not None else 10.0,
                 "estimated_arrival_minutes": arrival_min if arrival_min else 15,
                 "expected_intensity_mmh": intensity if intensity > 0 else 18.0,
-                "source_summary": "Doppler Radar Echo Reflectivity > 45 dBZ & Convective Index",
-                "observation_time": radar_summary.get("radar_observation_time", now),
+                "source_summary": "Doppler Radar Echo Reflectivity > 45 dBZ & Convective Weather Detection",
+                "observation_time": radar_obs_time,
                 "issue_timestamp": now,
-                "confidence_score": 0.92,
+                "confidence_score": None,
                 "is_active": True
             })
             return alerts
@@ -105,10 +108,10 @@ class AlertService:
                 "distance_km": dist_km if dist_km is not None else 8.5,
                 "estimated_arrival_minutes": arrival_min if arrival_min else 20,
                 "expected_intensity_mmh": intensity if intensity > 0 else 5.0,
-                "source_summary": "Doppler Composite Motion Vector (IMD DWR)",
-                "observation_time": radar_summary.get("radar_observation_time", now),
+                "source_summary": "RainViewer Doppler Composite Motion Tracking",
+                "observation_time": radar_obs_time,
                 "issue_timestamp": now,
-                "confidence_score": 0.88,
+                "confidence_score": None,
                 "is_active": True
             })
             return alerts
@@ -127,31 +130,42 @@ class AlertService:
                 "distance_km": dist_km if dist_km is not None else 22.0,
                 "estimated_arrival_minutes": arrival_min if arrival_min else 45,
                 "expected_intensity_mmh": intensity if intensity > 0 else 2.5,
-                "source_summary": "Regional Radar Surveillance (30 km Radius)",
-                "observation_time": radar_summary.get("radar_observation_time", now),
+                "source_summary": "RainViewer Radar Surveillance (30 km Radius)",
+                "observation_time": radar_obs_time,
                 "issue_timestamp": now,
-                "confidence_score": 0.85,
+                "confidence_score": None,
                 "is_active": True
             })
             return alerts
 
         # 4. GREEN Status: Normal, no significant rain detected
         t = self.TRANSLATIONS[AlertColorLevels.GREEN]
+        if radar_status == "UNAVAILABLE":
+            desc_en = "Radar surveillance composite temporarily unavailable. Open-Meteo NWP atmospheric models indicate dry conditions within Kadlur."
+            desc_te = "రాడార్ పర్యవేక్షణ తాత్కాలికంగా అందుబాటులో లేదు. వాతావరణ మోడల్ ప్రకారం కడ్లూరులో ప్రస్తుతం వర్ష సూచన లేదు."
+            desc_kn = "ರಾಡಾರ್ ಲಭ್ಯವಿಲ್ಲ. ಹವಾಮಾನ ಮಾದರಿಯ ಪ್ರಕಾರ ಕಡ್ಲೂರುನಲ್ಲಿ ಪ್ರಸ್ತುತ ಮಳೆಯ ಮುನ್ಸೂಚನೆ ಇಲ್ಲ."
+            source_sum = "Open-Meteo High-Res NWP Model (Radar surveillance unavailable)"
+        else:
+            desc_en = t["desc_en"]
+            desc_te = t["desc_te"]
+            desc_kn = t["desc_kn"]
+            source_sum = "RainViewer Radar Composite & Open-Meteo High-Res NWP Grid"
+
         alerts.append({
             "alert_level": AlertColorLevels.GREEN,
             "color_badge": "GREEN",
             "severity": "INFO",
             "title": t["title_en"],
-            "description": t["desc_en"],
-            "description_te": t["desc_te"],
-            "description_kn": t["desc_kn"],
+            "description": desc_en,
+            "description_te": desc_te,
+            "description_kn": desc_kn,
             "distance_km": None,
             "estimated_arrival_minutes": None,
             "expected_intensity_mmh": 0.0,
-            "source_summary": "IMD Radar Composite & Open-Meteo High-Res Grid",
-            "observation_time": radar_summary.get("radar_observation_time", now),
+            "source_summary": source_sum,
+            "observation_time": radar_obs_time,
             "issue_timestamp": now,
-            "confidence_score": 0.95,
+            "confidence_score": None,
             "is_active": True
         })
         return alerts

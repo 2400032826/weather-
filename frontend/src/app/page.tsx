@@ -5,6 +5,7 @@ import { Header } from '@/components/Header';
 import { CurrentWeather } from '@/components/CurrentWeather';
 import { RainWarningStatus } from '@/components/RainWarningStatus';
 import { NotificationControl } from '@/components/NotificationControl';
+import { RainAlarmSettings } from '@/components/RainAlarmSettings';
 import { HourlyTimeline } from '@/components/HourlyTimeline';
 import { TenDayForecast } from '@/components/TenDayForecast';
 import { RainMonitoring } from '@/components/RainMonitoring';
@@ -13,6 +14,7 @@ import type { Language } from '@/lib/translations';
 import { translations } from '@/lib/translations';
 import type { KadlurWeatherState } from '@/lib/weatherService';
 import { fetchLiveKadlurWeather } from '@/lib/weatherService';
+import { rainAlarmPlayer } from '@/lib/rainAlarmSound';
 import { WifiOff, Cpu } from 'lucide-react';
 
 export default function Home() {
@@ -87,6 +89,21 @@ export default function Home() {
     return () => clearInterval(bgSyncInterval);
   }, [loadData]);
 
+  // 3. Attention-Grabbing Rapido-Style Rain Alarm trigger on escalated warning (YELLOW, ORANGE, RED)
+  useEffect(() => {
+    if (!weatherState?.activeAlert) return;
+    const alert = weatherState.activeAlert;
+    if (['YELLOW', 'ORANGE', 'RED'].includes(alert.level)) {
+      const isAlarmEnabled = typeof window !== 'undefined'
+        ? localStorage.getItem('raithu_alarm_enabled') !== 'false'
+        : true;
+      if (isAlarmEnabled && rainAlarmPlayer.shouldTriggerForAlert(alert.level, alert.observationTime)) {
+        const vol = parseFloat(localStorage.getItem('raithu_alarm_volume') || '0.8');
+        rainAlarmPlayer.playAlarm(isNaN(vol) ? 0.8 : vol);
+      }
+    }
+  }, [weatherState?.activeAlert]);
+
   // Persist language selection
   useEffect(() => {
     const saved = localStorage.getItem('raithu_alert_lang') as Language;
@@ -144,7 +161,7 @@ export default function Home() {
   const t = translations[currentLang];
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white">
+    <div className="min-h-screen bg-slate-100 flex flex-col font-sans selection:bg-emerald-600 selection:text-white overflow-x-hidden">
       {/* 1. Header (Kadlur location, 1-second IST Clock, Live indicator, Voice, Language) */}
       <Header
         currentLang={currentLang}
@@ -196,6 +213,11 @@ export default function Home() {
 
             {/* 2.C: NOTIFICATION BUTTON (🔔 TURN ON RAIN ALERTS / RAIN ALERTS ON) */}
             <NotificationControl
+              currentLang={currentLang}
+            />
+
+            {/* 2.D: RAPIDO-STYLE RAIN ALARM SOUND SETTINGS (5s Siren + Test Alarm + Volume) */}
+            <RainAlarmSettings
               currentLang={currentLang}
             />
 

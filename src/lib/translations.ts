@@ -117,6 +117,25 @@ export interface Translations {
   // Developer Diagnostics
   devDiagnosticsLink: string;
   closeDiagnostics: string;
+
+  // Real-Time Rapido Rain Alarm Sound
+  soundAlarmTitle: string;
+  soundAlarmSubtitle: string;
+  soundAlarmToggleOn: string;
+  soundAlarmToggleOff: string;
+  testSoundBtn: string;
+  testingSoundBadge: string;
+  stopSoundBtn: string;
+  alarmVolume: string;
+  soundAlarmFarmerNote: string;
+  modelEstimateBadge: string;
+
+  // 5 Core Mobile Farmer Questions
+  q1RainNow: string;
+  q2RainComing: string;
+  q3RainDistance: string;
+  q4RainArrival: string;
+  q5DataFreshness: string;
 }
 
 export const translations: Record<Language, Translations> = {
@@ -225,7 +244,24 @@ export const translations: Record<Language, Translations> = {
     radius50km: "50 కి.మీ రాడార్ పరిధి",
 
     devDiagnosticsLink: "డెవలపర్ / సిస్టమ్ వివరాలు (Admin Diagnostics)",
-    closeDiagnostics: "వివరాలు మూసివేయండి"
+    closeDiagnostics: "వివరాలు మూసివేయండి",
+
+    soundAlarmTitle: "లైవ్ వర్షపు సైరన్ అలారం",
+    soundAlarmSubtitle: "కడ్లూరు వైపు వర్షపు మేఘాలు వస్తే పెద్ద శబ్దంతో తక్షణ హెచ్చరిక (Rapido స్టైల్)",
+    soundAlarmToggleOn: "🔊 వర్షపు సైరన్ అలారం: ఆన్",
+    soundAlarmToggleOff: "🔇 వర్షపు సైరన్ అలారం: ఆఫ్",
+    testSoundBtn: "🔊 అలారం సౌండ్ టెస్ట్ (5 సెకన్లు)",
+    testingSoundBadge: "🚨 సైరన్ మోగుతోంది...",
+    stopSoundBtn: "ఆపండి (STOP)",
+    alarmVolume: "అలారం శబ్దం (వాల్యూమ్)",
+    soundAlarmFarmerNote: "గమనిక: కడ్లూరు సమీపంలో వర్షం మొదలైనా లేదా మేఘాలు వేగంగా వస్తున్నా 5 సెకన్ల పాటు ఈ అలారం మోగుతుంది. మొబైల్ బ్రౌజర్ అనుమతి కోసం ఒక్కసారి 'సౌండ్ టెస్ట్' నొక్కండి.",
+    modelEstimateBadge: "మోడల్ అంచనా (NWP Model)",
+
+    q1RainNow: "కడ్లూరులో ఇప్పుడు వర్షం పడుతోందా?",
+    q2RainComing: "కడ్లూరు వైపు వర్షం వస్తోందా?",
+    q3RainDistance: "వర్షం ఎంత దూరంలో ఉంది?",
+    q4RainArrival: "ఎప్పుడు చేరే అవకాశం ఉంది?",
+    q5DataFreshness: "సమాచారం ఎంత తాజాది?"
   },
 
   kn: {
@@ -333,7 +369,24 @@ export const translations: Record<Language, Translations> = {
     radius50km: "50 ಕಿ.ಮೀ ರಾಡಾರ್ ವ್ಯಾಪ್ತಿ",
 
     devDiagnosticsLink: "ಡೆವಲಪರ್ ತಾಂತ್ರಿಕ ವಿವರಗಳು (Admin Diagnostics)",
-    closeDiagnostics: "ವಿವರಗಳನ್ನು ಮುಚ್ಚಿ"
+    closeDiagnostics: "ವಿವರಗಳನ್ನು ಮುಚ್ಚಿ",
+
+    soundAlarmTitle: "ಲೈವ್ ಮಳೆ ಸೈರನ್ ಅಲಾರ್ಮ್",
+    soundAlarmSubtitle: "ಕಡ್ಲೂರು ಕಡೆಗೆ ಮಳೆ ಮೋಡಗಳು ಬಂದರೆ ತಕ್ಷಣ ದೊಡ್ಡ ಶಬ್ದದ ಎಚ್ಚರಿಕೆ (Rapido ಶೈಲಿ)",
+    soundAlarmToggleOn: "🔊 ಮಳೆ ಸೈರನ್ ಅಲಾರ್ಮ್: ಆನ್",
+    soundAlarmToggleOff: "🔇 ಮಳೆ ಸೈರನ್ ಅಲಾರ್ಮ್: ಆಫ್",
+    testSoundBtn: "🔊 ಅಲಾರ್ಮ್ ಧ್ವನಿ ಪರೀಕ್ಷೆ (5 ಸೆಕೆಂಡುಗಳು)",
+    testingSoundBadge: "🚨 ಸೈರನ್ ಮೊಳಗುತ್ತಿದೆ...",
+    stopSoundBtn: "ನಿಲ್ಲಿಸಿ (STOP)",
+    alarmVolume: "ಅಲಾರ್ಮ್ ಧ್ವನಿ ಮಟ್ಟ (Volume)",
+    soundAlarmFarmerNote: "ಸೂಚನೆ: ಕಡ್ಲೂರು ಸಮೀಪದಲ್ಲಿ ಮಳೆ ಆರಂಭವಾದರೆ 5 ಸೆಕೆಂಡುಗಳ ಕಾಲ ಈ ಅಲಾರ್ಮ್ ಮೊಳಗುತ್ತದೆ. ಮೊಬೈಲ್ ಬ್ರೌಸರ್ ಅನುಮತಿಗಾಗಿ ಒಮ್ಮೆ 'ಧ್ವನಿ ಪರೀಕ್ಷೆ' ಒತ್ತಿರಿ.",
+    modelEstimateBadge: "ಮಾದರಿ ಅಂದಾಜು (NWP Model)",
+
+    q1RainNow: "ಕಡ್ಲೂರುನಲ್ಲಿ ಈಗ ಮಳೆಯಾಗುತ್ತಿದೆಯೇ?",
+    q2RainComing: "ಕಡ್ಲೂರು ಕಡೆಗೆ ಮಳೆ ಬರುತ್ತಿದೆಯೇ?",
+    q3RainDistance: "ಮಳೆ ಎಷ್ಟು ದೂರದಲ್ಲಿದೆ?",
+    q4RainArrival: "ಯಾವಾಗ ತಲುಪುವ ಸಾಧ್ಯತೆಯಿದೆ?",
+    q5DataFreshness: "ಮಾಹಿತಿ ಎಷ್ಟು ತಾಜಾವಾಗಿದೆ?"
   },
 
   en: {
@@ -441,6 +494,23 @@ export const translations: Record<Language, Translations> = {
     radius50km: "50 km Radar Envelope",
 
     devDiagnosticsLink: "Developer & Admin Diagnostics",
-    closeDiagnostics: "Close Diagnostics"
+    closeDiagnostics: "Close Diagnostics",
+
+    soundAlarmTitle: "Live Rain Siren Alarm",
+    soundAlarmSubtitle: "High-urgency 5-second dual-tone alert when rain approaches Kadlur (Rapido style)",
+    soundAlarmToggleOn: "🔊 Rain Siren Alarm: ON",
+    soundAlarmToggleOff: "🔇 Rain Siren Alarm: OFF",
+    testSoundBtn: "🔊 Test Alarm Sound (5s)",
+    testingSoundBadge: "🚨 Siren Playing...",
+    stopSoundBtn: "STOP",
+    alarmVolume: "Alarm Volume",
+    soundAlarmFarmerNote: "Note: Siren sounds for 5 seconds when approaching rain clouds enter Kadlur perimeter. Click 'Test Alarm Sound' once to unlock audio on mobile browsers.",
+    modelEstimateBadge: "NWP Model Estimate",
+
+    q1RainNow: "Is it raining now in Kadlur?",
+    q2RainComing: "Is rain approaching Kadlur?",
+    q3RainDistance: "How far is the rain?",
+    q4RainArrival: "When will it reach Kadlur?",
+    q5DataFreshness: "How fresh is this data?"
   }
 };

@@ -152,6 +152,9 @@ export const getApiBaseUrl = (): string => {
   if (typeof window !== 'undefined' && (window as any).__API_URL__) {
     return (window as any).__API_URL__.replace(/\/$/, '');
   }
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return 'https://raithu-alert-api.onrender.com';
+  }
   return 'http://localhost:8000';
 };
 

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Optional
 from app.core.config import settings
 from app.services.providers.open_meteo import OpenMeteoProvider
@@ -35,7 +35,7 @@ class MultiSourceAggregator:
             return_exceptions=True
         )
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         
         def safe_get(res, key, default):
             return res.get(key, default) if isinstance(res, dict) else default
@@ -56,7 +56,7 @@ class MultiSourceAggregator:
             },
             {
                 "provider_id": "rainviewer",
-                "display_name": "RainViewer (IMD Hyderabad Begumpet DWR Composite)",
+                "display_name": "RainViewer Weather Radar Tile Composite",
                 "status": safe_get(rv_health, "status", "CONNECTED"),
                 "freshness_status": safe_get(rv_health, "freshness_status", "Live / Fresh"),
                 "data_delay_minutes": safe_get(rv_health, "data_delay_minutes", 8),
@@ -65,7 +65,7 @@ class MultiSourceAggregator:
                 "last_successful_fetch": now if safe_get(rv_health, "status", "") == "CONNECTED" else None,
                 "update_frequency_minutes": 10,
                 "is_free": True,
-                "coverage_details": "Doppler composite sweeps cover Kadlur comfortably within 174km radius of Hyderabad S-Band DWR."
+                "coverage_details": "RainViewer radar mosaic tiles covering Kadlur (16.3768° N, 77.2870° E). Reflects regional radar sweep observations."
             },
             {
                 "provider_id": "imd",
@@ -109,7 +109,7 @@ class MultiSourceAggregator:
         ]
 
     async def aggregate_kadlur_weather(self, lat: float, lon: float) -> Dict[str, Any]:
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         if self._cached_response and self._cache_time and (now - self._cache_time).total_seconds() < 60:
             return self._cached_response
 
@@ -144,12 +144,13 @@ class MultiSourceAggregator:
                 ),
                 "weather_code": om_data.get("weather_code"),
                 "condition_text": om_data.get("condition_text", "Clear"),
-                "observation_time": om_data.get("observation_time", datetime.utcnow()),
-                "retrieval_time": datetime.utcnow(),
+                "observation_time": om_data.get("observation_time", now),
+                "retrieval_time": now,
                 "data_delay_minutes": om_data.get("data_delay_minutes", 10),
                 "freshness_status": om_data.get("freshness_status", "Live / Fresh"),
                 "source_name": "Open-Meteo High-Resolution NWP (Model Forecast)",
                 "is_actual_observation": False,
+                "observation_type": "NWP Model Estimate",
                 "data_status": om_data.get("data_status", "active")
             }
             live_status_message = "Live weather active (Open-Meteo & RainViewer Radar Composite connected)" if is_active else "Weather data delayed (Serving verified Kadlur baseline)"
@@ -178,7 +179,7 @@ class MultiSourceAggregator:
             "daily_forecast_10d": om_data.get("daily_forecast_10d", []),
             "radar_summary": radar_analysis,
             "active_alerts": alerts,
-            "last_updated": datetime.utcnow()
+            "last_updated": now
         }
 
         self._cached_response = response
