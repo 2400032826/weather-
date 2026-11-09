@@ -342,6 +342,9 @@ export default function Home() {
               </span>
             </div>
             <p className="text-slate-400 mt-0.5">{t.tagline} • Raichur District, Karnataka</p>
+            <p className="text-[11px] text-slate-400 mt-1 font-medium">
+              Designed &amp; Developed by <span className="text-emerald-400 font-bold">Venkat</span>
+            </p>
           </div>
 
           {/* Discreet Diagnostics Link */}

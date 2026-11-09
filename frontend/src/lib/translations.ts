@@ -150,6 +150,9 @@ export interface Translations {
   cachedDataNotice: string;
   staleDataWarning: string;
   syncingInBackground: string;
+
+  // Developer Credit
+  developerCredit: string;
 }
 
 export const translations: Record<Language, Translations> = {
@@ -287,7 +290,8 @@ export const translations: Record<Language, Translations> = {
 
     cachedDataNotice: "గతంలో సేకరించిన సమాచారం చూపబడుతోంది (Cached)",
     staleDataWarning: "తాజా సమాచారం సేకరించలేకపోయాము. మునుపటి రికార్డు చూపబడుతోంది (Stale Data)",
-    syncingInBackground: "తాజా సమాచారం సేకరిస్తున్నాము..."
+    syncingInBackground: "తాజా సమాచారం సేకరిస్తున్నాము...",
+    developerCredit: "Designed & Developed by Venkat"
   },
 
   kn: {
@@ -424,7 +428,8 @@ export const translations: Record<Language, Translations> = {
 
     cachedDataNotice: "ಹಿಂದಿನ ಸಂಗ್ರಹಿಸಿದ ಮಾಹಿತಿ ತೋರಿಸಲಾಗುತ್ತಿದೆ (Cached)",
     staleDataWarning: "ತಾಜಾ ಮಾಹಿತಿ ಪಡೆಯಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ಹಿಂದಿನ ದಾಖಲೆ ತೋರಿಸಲಾಗುತ್ತಿದೆ (Stale Data)",
-    syncingInBackground: "ಹೊಸ ಮಾಹಿತಿ ಪಡೆಯಲಾಗುತ್ತಿದೆ..."
+    syncingInBackground: "ಹೊಸ ಮಾಹಿತಿ ಪಡೆಯಲಾಗುತ್ತಿದೆ...",
+    developerCredit: "Designed & Developed by Venkat"
   },
 
   en: {
@@ -561,6 +566,7 @@ export const translations: Record<Language, Translations> = {
 
     cachedDataNotice: "Showing last recorded observation (Cached)",
     staleDataWarning: "Live update unavailable. Showing last successful data (Stale Data)",
-    syncingInBackground: "Syncing live weather data..."
+    syncingInBackground: "Syncing live weather data...",
+    developerCredit: "Designed & Developed by Venkat"
   }
 };

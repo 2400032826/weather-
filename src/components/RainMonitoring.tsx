@@ -279,6 +279,28 @@ export const RainMonitoring: React.FC<RainMonitoringProps> = ({ weather, current
         </div>
       </div>
 
+      {/* Windy External Live Radar & Wind Streams */}
+      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-red-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-sm">
+            W
+          </div>
+          <div>
+            <p className="font-bold text-slate-900">Windy Point Stream &amp; Satellite Overlay</p>
+            <p className="text-slate-500 text-[11px]">ECMWF / GFS wind vectors &amp; radar centered exactly on Kadlur (16.3768° N, 77.2870° E)</p>
+          </div>
+        </div>
+        <a
+          href="https://www.windy.com/16.377/77.287?radar,16.377,77.287,10"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition active:scale-95 shrink-0 shadow-sm"
+        >
+          <span>Open Windy Kadlur Map</span>
+          <span className="text-[10px] text-slate-400">↗</span>
+        </a>
+      </div>
+
       {/* Disclaimer */}
       <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 text-xs text-sky-950 flex items-start gap-2.5">
         <Info className="w-5 h-5 text-sky-600 shrink-0 mt-0.5" />

@@ -80,6 +80,24 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
         {/* 2. Kadlur Geographical Specifications Verification */}
         <KadlurGeographyCard currentLang={currentLang} />
 
+        {/* 3. About & Developer Verification Section */}
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 p-4 rounded-2xl border border-emerald-200/80 space-y-2 text-xs">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h3 className="font-bold text-slate-900 text-sm">About Raithu Alert — Kadlur Microclimate System</h3>
+              <p className="text-slate-600 mt-0.5">
+                Precision early-warning weather platform purpose-built for the farmers of Kadlur Village, Raichur District, Karnataka.
+              </p>
+            </div>
+            <span className="px-3 py-1 bg-white border border-emerald-300 rounded-full font-bold text-emerald-900 shadow-xs text-xs">
+              Designed &amp; Developed by <strong className="text-emerald-700">Venkat</strong>
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 pt-1 border-t border-emerald-200/50 leading-relaxed">
+            Integrity Note: Weather forecasts are probabilistic model assimilations (Open-Meteo NWP grid) and radar sweeps (IMD Begumpet DWR composite). No weather system can claim 100% predictive accuracy. All observations are verified directly against source telemetry.
+          </p>
+        </div>
+
         {/* Bottom Close Button */}
         <div className="pt-2 text-right">
           <button
