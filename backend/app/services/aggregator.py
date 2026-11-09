@@ -20,9 +20,10 @@ class MultiSourceAggregator:
         self.radar_engine = RadarRainfallEngine(self.rainviewer)
         self.alert_service = AlertService()
         
-        # 60-second in-memory response cache to ensure high-speed performance for slow mobile connections
+        # High-performance server-side caching: 90s fresh TTL, with 12-hour stale-while-revalidate fallback
         self._cached_response: Optional[Dict[str, Any]] = None
         self._cache_time: Optional[datetime] = None
+        self._last_valid_response: Optional[Dict[str, Any]] = None
 
     async def get_all_provider_statuses(self) -> List[Dict[str, Any]]:
         # Run health checks concurrently
@@ -110,15 +111,29 @@ class MultiSourceAggregator:
 
     async def aggregate_kadlur_weather(self, lat: float, lon: float) -> Dict[str, Any]:
         now = datetime.now(timezone.utc)
-        if self._cached_response and self._cache_time and (now - self._cache_time).total_seconds() < 60:
+        
+        # 1. Return fresh in-memory cached response if within 90 seconds
+        if self._cached_response and self._cache_time and (now - self._cache_time).total_seconds() < 90:
             return self._cached_response
 
-        # Fetch Open-Meteo and RainViewer concurrently with asyncio.gather
-        results = await asyncio.gather(
-            self.open_meteo.fetch_current_weather(lat, lon, forecast_days=10),
-            self.radar_engine.analyze_radar_for_kadlur(lat, lon),
-            return_exceptions=True
-        )
+        # 2. Concurrently fetch Open-Meteo NWP and RainViewer Radar with strict 5.0s ceiling
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    self.open_meteo.fetch_current_weather(lat, lon, forecast_days=10),
+                    self.radar_engine.analyze_radar_for_kadlur(lat, lon),
+                    return_exceptions=True
+                ),
+                timeout=5.0
+            )
+        except Exception as e:
+            # Stale-While-Revalidate: Return last valid cached response immediately on network timeout
+            if self._last_valid_response:
+                return self._last_valid_response
+            results = [
+                {"error": str(e), "data_status": "delayed"},
+                {"coverage_status": "UNAVAILABLE", "status_message": "Radar monitoring temporarily unavailable."}
+            ]
 
         om_data = results[0] if isinstance(results[0], dict) else {"error": str(results[0]), "data_status": "unavailable"}
         radar_analysis = results[1] if isinstance(results[1], dict) else {
@@ -128,6 +143,15 @@ class MultiSourceAggregator:
             "tile_layers": []
         }
         
+        # If external fetch failed but we have a valid prior response, serve stale-while-revalidate
+        if ("error" in om_data or om_data.get("data_status") == "unavailable") and self._last_valid_response:
+            return self._last_valid_response
+
+        # Format IST time string (UTC + 5:30)
+        ist_offset = timedelta(hours=5, minutes=30)
+        ist_time = now + ist_offset
+        last_updated_ist_str = ist_time.strftime("%I:%M %p IST")
+
         if "error" not in om_data and om_data.get("data_status") in ["active", "delayed"]:
             is_active = om_data.get("data_status") == "active"
             current_obs = {
@@ -179,9 +203,13 @@ class MultiSourceAggregator:
             "daily_forecast_10d": om_data.get("daily_forecast_10d", []),
             "radar_summary": radar_analysis,
             "active_alerts": alerts,
-            "last_updated": now
+            "last_updated": now,
+            "last_updated_ist": last_updated_ist_str
         }
 
         self._cached_response = response
         self._cache_time = now
+        if current_obs is not None:
+            self._last_valid_response = response
+
         return response

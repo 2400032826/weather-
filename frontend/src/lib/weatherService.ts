@@ -93,6 +93,26 @@ export interface KadlurWeatherState {
 
   // Provider Freshness List
   providers: ProviderFreshnessItem[];
+
+  // Cache & Stale Status
+  isFromCache?: boolean;
+  cachedAt?: string;
+  isStale?: boolean;
+}
+
+export function getCachedKadlurWeather(): KadlurWeatherState | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('raithu_alert_cache');
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data && typeof data === 'object' && typeof data.temperature === 'number') {
+        data.isFromCache = true;
+        return data as KadlurWeatherState;
+      }
+    }
+  } catch (e) {}
+  return null;
 }
 
 export const KADLUR_COORDS = {
@@ -160,37 +180,97 @@ export const getApiBaseUrl = (): string => {
 
 export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
   const apiBase = getApiBaseUrl();
-  // 1. Try Backend API
+
+  const defaultProviderList: ProviderFreshnessItem[] = [
+    {
+      providerId: "open-meteo",
+      displayName: "Open-Meteo High-Resolution NWP",
+      status: "CONNECTED",
+      freshnessStatus: "Live / Fresh",
+      dataDelayMinutes: 8,
+      lastChecked: new Date().toISOString(),
+      updateFrequencyMinutes: 15,
+      isFree: true,
+      coverageDetails: "1-2km assimilation grid for Kadlur.",
+      statusMessage: "Operational"
+    },
+    {
+      providerId: "rainviewer",
+      displayName: "RainViewer Doppler Composite (IMD Begumpet DWR)",
+      status: "CONNECTED",
+      freshnessStatus: "Live / Fresh",
+      dataDelayMinutes: 6,
+      lastChecked: new Date().toISOString(),
+      updateFrequencyMinutes: 10,
+      isFree: true,
+      coverageDetails: "Composite Doppler radar sweeps within 174km of DWR Begumpet.",
+      statusMessage: "Operational"
+    },
+    {
+      providerId: "imd",
+      displayName: "India Meteorological Department (Official)",
+      status: "PENDING_KEY",
+      freshnessStatus: "Unavailable",
+      lastChecked: new Date().toISOString(),
+      updateFrequencyMinutes: 60,
+      isFree: true,
+      coverageDetails: "Raichur AWS & DWR Hyderabad network.",
+      statusMessage: "Official credentials required for direct API telemetry."
+    },
+    {
+      providerId: "windy",
+      displayName: "Windy Point Forecast Models",
+      status: "PENDING_KEY",
+      freshnessStatus: "Unavailable",
+      lastChecked: new Date().toISOString(),
+      updateFrequencyMinutes: 60,
+      isFree: false,
+      coverageDetails: "ECMWF/GFS point grid.",
+      statusMessage: "WINDY_API_KEY required in backend."
+    },
+    {
+      providerId: "meteomatics",
+      displayName: "Meteomatics Weather API",
+      status: "PENDING_CREDENTIALS",
+      freshnessStatus: "Unavailable",
+      lastChecked: new Date().toISOString(),
+      updateFrequencyMinutes: 15,
+      isFree: false,
+      coverageDetails: "Commercial atmospheric downscaling.",
+      statusMessage: "Enterprise account credentials required."
+    }
+  ];
+
+  // 1. Try Backend API with strict 6s timeout so UI never hangs
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
   try {
-    const res = await fetch(`${apiBase}/api/v1/weather/dashboard`, { cache: "no-store" });
+    const res = await fetch(`${apiBase}/api/v1/weather/dashboard`, {
+      cache: "no-store",
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
     if (res.ok) {
       const data = await res.json();
       const cw = data.current_weather;
       const r = data.radar_summary;
       const primaryAlert = data.active_alerts?.[0];
 
-      // Fetch provider statuses from backend
-      let providerList: ProviderFreshnessItem[] = [];
-      try {
-        const pRes = await fetch(`${apiBase}/api/v1/sources/status`, { cache: "no-store" });
-        if (pRes.ok) {
-          const pData = await pRes.json();
-          providerList = pData.map((p: any) => ({
-            providerId: p.provider_id,
-            displayName: p.display_name,
+      // Use backend providers if present, else defaultProviderList
+      const providerList: ProviderFreshnessItem[] = data.providers?.length
+        ? data.providers.map((p: any) => ({
+            providerId: p.provider_id || p.providerId,
+            displayName: p.display_name || p.displayName,
             status: p.status,
-            freshnessStatus: p.freshness_status || 'Live / Fresh',
-            dataDelayMinutes: p.data_delay_minutes ?? 10,
-            lastChecked: p.last_checked,
-            updateFrequencyMinutes: p.update_frequency_minutes,
-            isFree: p.is_free,
-            coverageDetails: p.coverage_details,
-            statusMessage: p.status_message
-          }));
-        }
-      } catch (e) {
-        // Fallback default provider list
-      }
+            freshnessStatus: p.freshness_status || p.freshnessStatus || 'Live / Fresh',
+            dataDelayMinutes: p.data_delay_minutes ?? p.dataDelayMinutes ?? 10,
+            lastChecked: p.last_checked || p.lastChecked || new Date().toISOString(),
+            updateFrequencyMinutes: p.update_frequency_minutes ?? p.updateFrequencyMinutes ?? 15,
+            isFree: p.is_free ?? p.isFree ?? true,
+            coverageDetails: p.coverage_details || p.coverageDetails,
+            statusMessage: p.status_message || p.statusMessage || "Operational"
+          }))
+        : defaultProviderList;
 
       const mapHour = (h: any, idx: number): HourlyForecastItem => ({
         time: h.time,
@@ -205,6 +285,14 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
         isCurrentHour: idx === 0
       });
 
+      const formattedIst = data.last_updated_ist || (new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      }).format(new Date()) + ' IST');
+
       const result: KadlurWeatherState = {
         temperature: cw?.temperature_c ?? 30.5,
         feelsLike: cw?.feels_like_c ?? 30.0,
@@ -216,7 +304,7 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
         rainProbability: cw?.precipitation_probability_pct ?? 0,
         conditionText: cw?.condition_text ?? "Clear sky",
         weatherCode: cw?.weather_code ?? 0,
-        lastUpdated: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        lastUpdated: formattedIst,
         sourceBadge: data.data_source_badge ?? "Open-Meteo NWP + Doppler Composite",
         isActualObservation: cw?.is_actual_observation ?? false,
         dataDelayMinutes: cw?.data_delay_minutes ?? 8,
@@ -267,7 +355,10 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
           observationTime: primaryAlert?.observation_time || new Date().toISOString()
         },
 
-        providers: providerList
+        providers: providerList,
+        isFromCache: false,
+        cachedAt: new Date().toISOString(),
+        isStale: false
       };
 
       // Cache state in localStorage for instant offline load
@@ -280,10 +371,13 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
       return result;
     }
   } catch (err) {
+    clearTimeout(timeoutId);
     // Backend offline; continue to direct live fetch
   }
 
-  // 2. Direct Fallback to Live Open-Meteo API
+  // 2. Direct Fallback to Live Open-Meteo API with 4s timeout
+  const omController = new AbortController();
+  const omTimeoutId = setTimeout(() => omController.abort(), 4000);
   const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=16.3768&longitude=77.2870&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,rain,weather_code,cloud_cover,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m&forecast_days=7&timezone=Asia%2FKolkata`;
   
   let temp = 30.8;
@@ -296,10 +390,13 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
   let rainProb = 0;
   let code = 0;
   let hourlyList: HourlyForecastItem[] = [];
+  let openMeteoSuccess = false;
 
   try {
-    const omRes = await fetch(omUrl);
+    const omRes = await fetch(omUrl, { signal: omController.signal });
+    clearTimeout(omTimeoutId);
     if (omRes.ok) {
+      openMeteoSuccess = true;
       const omData = await omRes.json();
       const curr = omData.current || {};
       temp = curr.temperature_2m ?? temp;
@@ -347,7 +444,17 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
       rainProb = hourlyList[0]?.precipitationProbability ?? 0;
     }
   } catch (err) {
+    clearTimeout(omTimeoutId);
     console.warn("Direct Open-Meteo fetch error:", err);
+  }
+
+  // If live calls failed, check cached data first to never show an empty or broken screen
+  if (!openMeteoSuccess) {
+    const cached = getCachedKadlurWeather();
+    if (cached) {
+      cached.isStale = true;
+      return cached;
+    }
   }
 
   // Direct RainViewer radar tiles for Kadlur
@@ -370,6 +477,14 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
     console.warn("Direct RainViewer fetch error:", err);
   }
 
+  const fallbackIst = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  }).format(new Date()) + ' IST';
+
   const fallbackResult: KadlurWeatherState = {
     temperature: temp,
     feelsLike: feels,
@@ -381,7 +496,7 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
     rainProbability: rainProb,
     conditionText: WMO_MAP[code] || "Partly Cloudy",
     weatherCode: code,
-    lastUpdated: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    lastUpdated: fallbackIst,
     sourceBadge: "Open-Meteo NWP Grid (Direct Kadlur Link)",
     isActualObservation: false,
     dataDelayMinutes: 8,
@@ -428,66 +543,17 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
       observationTime: new Date().toISOString()
     },
 
-    providers: [
-      {
-        providerId: "open-meteo",
-        displayName: "Open-Meteo High-Resolution NWP",
-        status: "CONNECTED",
-        freshnessStatus: "Live / Fresh",
-        dataDelayMinutes: 8,
-        lastChecked: new Date().toISOString(),
-        updateFrequencyMinutes: 15,
-        isFree: true,
-        coverageDetails: "1-2km assimilation grid for Kadlur.",
-        statusMessage: "Operational"
-      },
-      {
-        providerId: "rainviewer",
-        displayName: "RainViewer Doppler Composite (IMD Begumpet DWR)",
-        status: frames.length > 0 ? "CONNECTED" : "UNAVAILABLE",
-        freshnessStatus: frames.length > 0 ? "Live / Fresh" : "Unavailable",
-        dataDelayMinutes: 6,
-        lastChecked: new Date().toISOString(),
-        updateFrequencyMinutes: 10,
-        isFree: true,
-        coverageDetails: "Composite Doppler radar sweeps within 174km of DWR Begumpet.",
-        statusMessage: frames.length > 0 ? "Operational" : "Radar unavailable"
-      },
-      {
-        providerId: "imd",
-        displayName: "India Meteorological Department (Official)",
-        status: "PENDING_KEY",
-        freshnessStatus: "Unavailable",
-        lastChecked: new Date().toISOString(),
-        updateFrequencyMinutes: 60,
-        isFree: true,
-        coverageDetails: "Raichur AWS & DWR Hyderabad network.",
-        statusMessage: "Official credentials required for direct API telemetry."
-      },
-      {
-        providerId: "windy",
-        displayName: "Windy Point Forecast Models",
-        status: "PENDING_KEY",
-        freshnessStatus: "Unavailable",
-        lastChecked: new Date().toISOString(),
-        updateFrequencyMinutes: 60,
-        isFree: false,
-        coverageDetails: "ECMWF/GFS point grid.",
-        statusMessage: "WINDY_API_KEY required in backend."
-      },
-      {
-        providerId: "meteomatics",
-        displayName: "Meteomatics Weather API",
-        status: "PENDING_CREDENTIALS",
-        freshnessStatus: "Unavailable",
-        lastChecked: new Date().toISOString(),
-        updateFrequencyMinutes: 15,
-        isFree: false,
-        coverageDetails: "Commercial atmospheric downscaling.",
-        statusMessage: "Enterprise account credentials required."
-      }
-    ]
+    providers: defaultProviderList,
+    isFromCache: false,
+    cachedAt: new Date().toISOString(),
+    isStale: !openMeteoSuccess
   };
+
+  if (openMeteoSuccess && typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('raithu_alert_cache', JSON.stringify(fallbackResult));
+    } catch (e) {}
+  }
 
   return fallbackResult;
 }

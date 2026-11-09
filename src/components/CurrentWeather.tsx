@@ -91,6 +91,11 @@ export const CurrentWeather: React.FC<CurrentWeatherProps> = ({ weather, current
             <Clock className="w-3.5 h-3.5 text-slate-400" />
             <span>{t.lastUpdated}:</span>
             <strong className="text-slate-700">{weather.lastUpdated}</strong>
+            {weather.isFromCache && (
+              <span className="text-[10px] bg-amber-50 text-amber-800 px-1.5 py-0.5 rounded font-sans font-bold border border-amber-200 ml-1">
+                {t.cachedDataNotice || 'కాష్'}
+              </span>
+            )}
           </p>
         </div>
       </div>

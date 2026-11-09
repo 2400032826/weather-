@@ -13,6 +13,9 @@ class RainViewerProvider(BaseWeatherProvider):
     requires_key: bool = False
     
     API_URL: str = "https://api.rainviewer.com/public/weather-maps.json"
+    _cached_metadata: Optional[Dict[str, Any]] = None
+    _cached_at: Optional[float] = None
+    _cache_ttl_sec: float = 180.0  # 3-minute in-memory cache for high-speed delivery
 
     @staticmethod
     def lat_lon_to_tile(lat: float, lon: float, zoom: int) -> tuple[int, int]:
@@ -23,12 +26,22 @@ class RainViewerProvider(BaseWeatherProvider):
         return (xtile, ytile)
 
     async def fetch_radar_metadata(self) -> Dict[str, Any]:
+        now = time.time()
+        if self._cached_metadata and self._cached_at and (now - self._cached_at) < self._cache_ttl_sec:
+            return self._cached_metadata
+
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
+            async with httpx.AsyncClient(timeout=4.0) as client:
                 resp = await client.get(self.API_URL)
                 resp.raise_for_status()
-                return resp.json()
+                data = resp.json()
+                self._cached_metadata = data
+                self._cached_at = now
+                return data
         except Exception as e:
+            # Stale-while-revalidate: return last known good metadata on network blip
+            if self._cached_metadata:
+                return self._cached_metadata
             return {"error": str(e), "status": "unavailable"}
 
     async def fetch_current_weather(self, lat: float, lon: float) -> Dict[str, Any]:

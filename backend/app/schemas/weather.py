@@ -132,6 +132,7 @@ class DashboardResponse(BaseModel):
     radar_summary: RadarAnalysisSchema
     active_alerts: List[AlertSchema] = []
     last_updated: datetime
+    last_updated_ist: Optional[str] = None
 
 
 class ProviderStatusSchema(BaseModel):

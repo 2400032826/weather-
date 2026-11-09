@@ -12,45 +12,42 @@ import { TenDayForecast } from '@/components/TenDayForecast';
 import { RainMonitoring } from '@/components/RainMonitoring';
 import { QuickFiveAnswers } from '@/components/QuickFiveAnswers';
 import { DiagnosticsModal } from '@/components/DiagnosticsModal';
+import { DashboardSkeleton } from '@/components/DashboardSkeleton';
 import type { Language } from '@/lib/translations';
 import { translations } from '@/lib/translations';
 import type { KadlurWeatherState } from '@/lib/weatherService';
-import { fetchLiveKadlurWeather } from '@/lib/weatherService';
+import { fetchLiveKadlurWeather, getCachedKadlurWeather } from '@/lib/weatherService';
 import { rainAlarmPlayer } from '@/lib/rainAlarmSound';
-import { WifiOff, Cpu } from 'lucide-react';
+import { WifiOff, Cpu, RefreshCw, AlertTriangle } from 'lucide-react';
 
 export default function Home() {
   // Default language is Telugu ('te') for local Kadlur farmers per requirements
   const [currentLang, setCurrentLang] = useState<Language>('te');
-  const [weatherState, setWeatherState] = useState<KadlurWeatherState | null>(null);
+  // Stale-While-Revalidate: Instant synchronous initialization from cache (<50ms)
+  const [weatherState, setWeatherState] = useState<KadlurWeatherState | null>(() => getCachedKadlurWeather());
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !getCachedKadlurWeather());
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState<boolean>(false);
   const [secondsSinceSync, setSecondsSinceSync] = useState<number>(0);
 
+  const isFetchingRef = useRef<boolean>(false);
   const lastSyncTimeRef = useRef<number>(Date.now());
 
   // Monitor network online/offline state
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIsOnline(navigator.onLine);
-      const handleOnline = () => setIsOnline(true);
-      const handleOffline = () => setIsOnline(false);
-
-      window.addEventListener('online', handleOnline);
-      window.addEventListener('offline', handleOffline);
-      return () => {
-        window.removeEventListener('online', handleOnline);
-        window.removeEventListener('offline', handleOffline);
-      };
     }
   }, []);
 
-  // Fetch weather data from backend (with fallback)
+  // Fetch weather data from backend (with automatic fallback to open-meteo & cache)
   const loadData = useCallback(async (isManual: boolean = false) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     if (isManual) setIsRefreshing(true);
+
     try {
       const data = await fetchLiveKadlurWeather();
       setWeatherState(data);
@@ -58,16 +55,14 @@ export default function Home() {
       setSecondsSinceSync(0);
     } catch (err) {
       console.warn('Weather fetch error:', err);
-      // Try restore from localStorage cache if offline
-      if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('raithu_alert_cache');
-        if (cached) {
-          try {
-            setWeatherState(JSON.parse(cached));
-          } catch (e) {}
-        }
+      // Fallback to cached state marked stale
+      const cached = getCachedKadlurWeather();
+      if (cached) {
+        cached.isStale = true;
+        setWeatherState(cached);
       }
     } finally {
+      isFetchingRef.current = false;
       setIsRefreshing(false);
       setIsLoading(false);
     }
@@ -82,13 +77,48 @@ export default function Home() {
     return () => clearInterval(secondTimer);
   }, []);
 
-  // 2. Automatic Scheduled Background Updates without manual page reload
+  // 2. Automatic Scheduled Background Updates with Tab Visibility Management
+  // Only polls when the browser tab is active to preserve farmer's phone battery & data
   useEffect(() => {
     loadData(false);
+
+    // Tiered polling: Check every 60 seconds when tab is visible
     const bgSyncInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return; // Pause polling when tab is hidden or phone is asleep
+      }
       loadData(false);
-    }, 35000);
-    return () => clearInterval(bgSyncInterval);
+    }, 60000);
+
+    // Resume polling and immediately refresh if farmer switches back to tab after >= 60s
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const elapsed = (Date.now() - lastSyncTimeRef.current) / 1000;
+        if (elapsed >= 60) {
+          loadData(false);
+        }
+      }
+    };
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      loadData(false);
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      clearInterval(bgSyncInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
   }, [loadData]);
 
   // 3. Attention-Grabbing Rapido-Style Rain Alarm trigger on verified approaching rain (YELLOW, ORANGE, RED)
@@ -212,15 +242,38 @@ export default function Home() {
         {/* First-Time Mobile PWA Install Banner (Automatically hidden once installed) */}
         <InstallAppBanner currentLang={currentLang} />
 
-        {isLoading && !weatherState ? (
-          /* Loading Skeleton for Slow Mobile Connections */
-          <div className="space-y-4 animate-pulse">
-            <div className="h-44 bg-slate-200 rounded-3xl" />
-            <div className="h-32 bg-slate-200 rounded-3xl" />
-            <div className="h-20 bg-slate-200 rounded-3xl" />
-            <div className="h-48 bg-slate-200 rounded-3xl" />
-            <div className="h-64 bg-slate-200 rounded-3xl" />
+        {/* Stale / Cached Notice Banner when offline or using older stored data */}
+        {weatherState?.isStale && (
+          <div className="bg-amber-50 border border-amber-300 text-amber-900 px-4 py-2.5 rounded-2xl text-xs font-semibold flex items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>{t.staleDataWarning}</span>
+            </div>
+            <button
+              onClick={() => loadData(true)}
+              disabled={isRefreshing}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold transition shrink-0 active:scale-95"
+            >
+              <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+              <span>{t.refresh}</span>
+            </button>
           </div>
+        )}
+
+        {/* Cached Data Revalidating Indicator */}
+        {weatherState?.isFromCache && !weatherState?.isStale && isRefreshing && (
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-2 rounded-xl text-xs font-medium flex items-center justify-between shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-600 animate-ping"></span>
+              <span>{t.syncingInBackground}</span>
+            </div>
+            <span className="text-[11px] text-emerald-600 font-mono">IST Live Sync</span>
+          </div>
+        )}
+
+        {isLoading && !weatherState ? (
+          /* Structured Dashboard Skeleton for First-Time Visitors on Slow Connections */
+          <DashboardSkeleton />
         ) : weatherState ? (
           <>
             {/* 2.A: CURRENT WEATHER (Temperature, condition, rainfall, wind, last updated) */}
@@ -301,7 +354,7 @@ export default function Home() {
               <span>{t.devDiagnosticsLink}</span>
             </button>
             <p className="text-[10px] text-slate-500 font-mono">
-              Auto-sync: 35s • Kadlur Coordinates: 16.3768° N, 77.2870° E
+              Auto-sync: 60s • Kadlur Coordinates: 16.3768° N, 77.2870° E
             </p>
           </div>
         </div>

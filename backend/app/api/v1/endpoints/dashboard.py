@@ -67,5 +67,6 @@ async def get_kadlur_dashboard(db: Session = Depends(get_db)):
         "daily_forecast_10d": weather_data.get("daily_forecast_10d", []),
         "radar_summary": radar_summary,
         "active_alerts": active_alerts,
-        "last_updated": weather_data.get("last_updated")
+        "last_updated": weather_data.get("last_updated"),
+        "last_updated_ist": weather_data.get("last_updated_ist")
     }

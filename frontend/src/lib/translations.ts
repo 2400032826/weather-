@@ -145,6 +145,11 @@ export interface Translations {
   iosStep2: string;
   iHaveInstalled: string;
   closeGuide: string;
+
+  // Cache & Live Auto-Update Indicators
+  cachedDataNotice: string;
+  staleDataWarning: string;
+  syncingInBackground: string;
 }
 
 export const translations: Record<Language, Translations> = {
@@ -278,7 +283,11 @@ export const translations: Record<Language, Translations> = {
     iosStep1: "1. Safari బ్రౌజర్ దిగువన ఉన్న 'షేర్' (Share 📤) గుర్తును తాకండి.",
     iosStep2: "2. జాబితాలో కిందకు వెళ్లి 'హోమ్ స్క్రీన్‌కు జోడించండి' (Add to Home Screen ➕) నొక్కండి.",
     iHaveInstalled: "✓ నేను హోమ్ స్క్రీన్‌కు జోడించాను",
-    closeGuide: "మూసివేయండి"
+    closeGuide: "మూసివేయండి",
+
+    cachedDataNotice: "గతంలో సేకరించిన సమాచారం చూపబడుతోంది (Cached)",
+    staleDataWarning: "తాజా సమాచారం సేకరించలేకపోయాము. మునుపటి రికార్డు చూపబడుతోంది (Stale Data)",
+    syncingInBackground: "తాజా సమాచారం సేకరిస్తున్నాము..."
   },
 
   kn: {
@@ -411,7 +420,11 @@ export const translations: Record<Language, Translations> = {
     iosStep1: "1. Safari ಕೆಳಭಾಗದಲ್ಲಿರುವ 'ಶೇರ್' (Share 📤) ಐಕಾನ್ ಟ್ಯಾಪ್ ಮಾಡಿ.",
     iosStep2: "2. ಪಟ್ಟಿಯಲ್ಲಿ ಕೆಳಗೆ ಸ್ಕ್ರಾಲ್ ಮಾಡಿ 'Add to Home Screen' (➕) ಆಯ್ಕೆಮಾಡಿ.",
     iHaveInstalled: "✓ ನಾನು ಹೋಮ್ ಸ್ಕ್ರೀನ್‌ಗೆ ಸೇರಿಸಿದ್ದೇನೆ",
-    closeGuide: "ಮುಚ್ಚಿ"
+    closeGuide: "ಮುಚ್ಚಿ",
+
+    cachedDataNotice: "ಹಿಂದಿನ ಸಂಗ್ರಹಿಸಿದ ಮಾಹಿತಿ ತೋರಿಸಲಾಗುತ್ತಿದೆ (Cached)",
+    staleDataWarning: "ತಾಜಾ ಮಾಹಿತಿ ಪಡೆಯಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ಹಿಂದಿನ ದಾಖಲೆ ತೋರಿಸಲಾಗುತ್ತಿದೆ (Stale Data)",
+    syncingInBackground: "ಹೊಸ ಮಾಹಿತಿ ಪಡೆಯಲಾಗುತ್ತಿದೆ..."
   },
 
   en: {
@@ -544,6 +557,10 @@ export const translations: Record<Language, Translations> = {
     iosStep1: "1. Tap the Share button (Share 📤) at the bottom of Safari.",
     iosStep2: "2. Scroll down and tap 'Add to Home Screen' (➕).",
     iHaveInstalled: "✓ I have added to Home Screen",
-    closeGuide: "Close"
+    closeGuide: "Close",
+
+    cachedDataNotice: "Showing last recorded observation (Cached)",
+    staleDataWarning: "Live update unavailable. Showing last successful data (Stale Data)",
+    syncingInBackground: "Syncing live weather data..."
   }
 };
