@@ -44,7 +44,7 @@ export const QuickFiveAnswers: React.FC<QuickFiveAnswersProps> = ({ weather, cur
     : weather.lastUpdated;
 
   return (
-    <section className="bg-white rounded-3xl p-5 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+    <section className="bg-white rounded-3xl p-5 sm:p-7 shadow-sm hover:shadow-md transition-shadow border border-slate-200/80 space-y-4">
       {/* Title & Badge */}
       <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2.5">
