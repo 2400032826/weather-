@@ -42,9 +42,11 @@ async def background_weather_collector():
             primary_alert = alerts_list[0] if alerts_list else None
             if primary_alert:
                 lvl = primary_alert.get("alert_level", "GREEN")
-                if lvl != "GREEN" and lvl != last_recorded_alert_level:
+                if lvl in ["YELLOW", "ORANGE", "RED"] and lvl != last_recorded_alert_level:
                     db = SessionLocal()
                     try:
+                        # Deactivate any previous active alerts
+                        db.query(WeatherAlertRecord).filter(WeatherAlertRecord.is_active == True).update({"is_active": False})
                         obs_time = primary_alert.get("observation_time")
                         if not isinstance(obs_time, datetime):
                             obs_time = datetime.utcnow()
@@ -57,7 +59,9 @@ async def background_weather_collector():
                             description_kn=primary_alert.get("description_kn", ""),
                             data_observation_timestamp=obs_time,
                             source_summary=primary_alert.get("source_summary", "Radar & NWP"),
-                            confidence_score=primary_alert.get("confidence_score", 0.9),
+                            confidence_score=primary_alert.get("confidence_score") or 0.0,
+                            event_id=primary_alert.get("event_id"),
+                            expires_at=primary_alert.get("expires_at"),
                             is_active=True
                         )
                         db.add(record)
@@ -65,8 +69,15 @@ async def background_weather_collector():
                         last_recorded_alert_level = lvl
                     finally:
                         db.close()
-                elif lvl == "GREEN":
-                    last_recorded_alert_level = "GREEN"
+                elif lvl in ["GREEN", "GREY"] and last_recorded_alert_level not in ["GREEN", "GREY"]:
+                    # Conditions resolved or radar unavailable: deactivate all active warnings
+                    db = SessionLocal()
+                    try:
+                        db.query(WeatherAlertRecord).filter(WeatherAlertRecord.is_active == True).update({"is_active": False})
+                        db.commit()
+                    finally:
+                        db.close()
+                    last_recorded_alert_level = lvl
         except asyncio.CancelledError:
             break
         except Exception as e:

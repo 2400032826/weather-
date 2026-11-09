@@ -34,6 +34,7 @@ export default function Home() {
 
   const isFetchingRef = useRef<boolean>(false);
   const lastSyncTimeRef = useRef<number>(Date.now());
+  const isInitialMountRef = useRef<boolean>(true);
 
   // Monitor network online/offline state
   useEffect(() => {
@@ -121,34 +122,55 @@ export default function Home() {
     };
   }, [loadData]);
 
-  // 3. Attention-Grabbing Rapido-Style Rain Alarm trigger on verified approaching rain (YELLOW, ORANGE, RED)
+  // 3. Attention-Grabbing Rapido-Style Rain Alarm trigger strictly on verified approaching rain (YELLOW, ORANGE, RED)
+  // Guaranteed: NEVER plays on initial load, refresh, dry weather, or previously alarmed events
   useEffect(() => {
     if (!weatherState?.activeAlert) return;
     const alert = weatherState.activeAlert;
+    const eventId = alert.eventId || `${alert.level}_${alert.observationTime}`;
 
-    // Never play siren for GREEN / dry weather or ordinary status messages
+    // 1. NEVER trigger siren on initial page open or refresh
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      if (typeof window !== 'undefined' && eventId) {
+        try {
+          localStorage.setItem('raithu_last_alarmed_event_id', eventId);
+        } catch (e) {}
+      }
+      return;
+    }
+
+    // 2. Never play siren for GREEN, GREY, or dry weather
     if (!['YELLOW', 'ORANGE', 'RED'].includes(alert.level)) {
       return;
     }
 
-    // Verify rain is actually approaching or detected within monitoring radius
-    const isVerifiedRainApproaching =
+    // 3. STRICT EVIDENCE VALIDATION:
+    // Requires genuine radar echoes tracking towards Kadlur or active ground rainfall
+    const hasGenuineRainApproaching =
       weatherState.isApproaching ||
       weatherState.rainDetected ||
-      alert.level === 'ORANGE' ||
-      alert.level === 'RED' ||
+      weatherState.currentRainfall >= 1.0 ||
       (alert.level === 'YELLOW' && weatherState.nearestRainDistanceKm != null && weatherState.nearestRainDistanceKm <= 30);
 
-    if (!isVerifiedRainApproaching) {
+    if (!hasGenuineRainApproaching) {
       return;
     }
 
-    // Check independent rain siren preference (separate from push notifications)
+    // 4. Reject contradictory dry descriptions
+    const desc = (alert.description || '').toLowerCase();
+    if (desc.includes('dry') || desc.includes('stable') || desc.includes('no significant rain')) {
+      console.warn('Rejecting siren: Alert claims warning level but description indicates dry conditions.');
+      return;
+    }
+
+    // 5. Check independent rain siren preference (separate from push notifications)
     const isSirenEnabled = typeof window !== 'undefined'
       ? (localStorage.getItem('raithu_siren_enabled') !== 'false' && localStorage.getItem('raithu_alarm_enabled') !== 'false')
       : true;
 
-    if (isSirenEnabled && rainAlarmPlayer.shouldTriggerForAlert(alert.level, alert.observationTime)) {
+    // 6. Check persistent event deduplication (via localStorage in shouldTriggerForAlert)
+    if (isSirenEnabled && rainAlarmPlayer.shouldTriggerForAlert(alert.level, eventId, alert.observationTime, false)) {
       const vol = parseFloat(localStorage.getItem('raithu_alarm_volume') || '0.8');
       rainAlarmPlayer.playAlarm(isNaN(vol) ? 0.8 : vol);
     }
@@ -156,6 +178,7 @@ export default function Home() {
     weatherState?.activeAlert,
     weatherState?.isApproaching,
     weatherState?.rainDetected,
+    weatherState?.currentRainfall,
     weatherState?.nearestRainDistanceKm
   ]);
 

@@ -26,7 +26,7 @@ export const RecentAlerts: React.FC<RecentAlertsProps> = ({ weather, currentLang
       description: currentLang === 'te' ? alert.descriptionTe : currentLang === 'kn' ? alert.descriptionKn : alert.description,
       time: alert.observationTime,
       source: alert.sourceSummary,
-      confidence: Math.round(alert.confidence * 100),
+      confidence: alert.confidence ? Math.round(alert.confidence * 100) : 90,
       isCurrent: true,
     },
     {

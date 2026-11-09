@@ -231,22 +231,74 @@ class RainAlarmPlayer {
   }
 
   /**
-   * Check if this alert should trigger an alarm (deduplicated by alert identifier).
+   * Check if this alert should trigger an alarm with strict evidence and deduplication.
+   * Prevents playing on initial load, refresh, dry weather, or previously alarmed events.
    */
-  public shouldTriggerForAlert(alertLevel: string, alertTimestamp: string): boolean {
+  public shouldTriggerForAlert(
+    alertLevel: string,
+    eventId: string,
+    observationTimeIso?: string,
+    isInitialLoad: boolean = false
+  ): boolean {
+    // 1. Only verified warning levels (YELLOW, ORANGE, RED) can ever sound an alarm
     if (!['YELLOW', 'ORANGE', 'RED'].includes(alertLevel)) {
       return false;
     }
-    const alertKey = `${alertLevel}_${alertTimestamp}`;
-    if (this.lastAlertIdFired === alertKey) {
-      return false; // Already played for this exact event
+
+    // 2. NEVER play on initial website open or page refresh
+    if (isInitialLoad) {
+      if (typeof window !== 'undefined' && eventId) {
+        try {
+          localStorage.setItem('raithu_last_alarmed_event_id', eventId);
+        } catch (e) {}
+      }
+      return false;
     }
-    this.lastAlertIdFired = alertKey;
+
+    if (!eventId) {
+      return false;
+    }
+
+    // 3. Reject stale events (> 30 minutes old)
+    if (observationTimeIso) {
+      const obsTime = new Date(observationTimeIso).getTime();
+      if (!isNaN(obsTime) && Date.now() - obsTime > 30 * 60 * 1000) {
+        return false;
+      }
+    }
+
+    // 4. Persistent deduplication via localStorage:
+    // Prevents duplicate alarms across reloads, tab switches, and background syncs
+    if (typeof window !== 'undefined') {
+      try {
+        const lastFired = localStorage.getItem('raithu_last_alarmed_event_id');
+        if (lastFired === eventId) {
+          return false; // Already alarmed for this exact event!
+        }
+      } catch (e) {}
+    }
+
+    if (this.lastAlertIdFired === eventId) {
+      return false;
+    }
+
+    // 5. Genuine, verified new rain-approaching event!
+    this.lastAlertIdFired = eventId;
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('raithu_last_alarmed_event_id', eventId);
+      } catch (e) {}
+    }
     return true;
   }
 
   public resetLastAlertKey(): void {
     this.lastAlertIdFired = '';
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.removeItem('raithu_last_alarmed_event_id');
+      } catch (e) {}
+    }
   }
 }
 

@@ -84,12 +84,35 @@ export const RainWarningStatus: React.FC<RainWarningStatusProps> = ({
       descKn: 'ಭಾರೀ ಮಳೆ ಅಥವಾ ಗುಡುಗು, ಬಿರುಗಾಳಿಯ ಮುನ್ನೆಚ್ಚರಿಕೆ. ಕಣದಲ್ಲಿರುವ ಧಾನ್ಯಗಳನ್ನು ಸುರಕ್ಷಿತ ಸ್ಥಳಕ್ಕೆ ಸಾಗಿಸಿ.',
       descEn: 'Heavy rainfall (>15 mm/h) or thunderstorm registered. Protect harvested produce immediately.',
     },
+    GREY: {
+      bg: 'bg-slate-500',
+      cardBg: 'bg-slate-500',
+      lightBg: 'bg-slate-100',
+      border: 'border-slate-300',
+      title: t.bigAlertGrey,
+      text: 'text-slate-900',
+      badgeBg: 'bg-slate-200 text-slate-800 border-slate-300',
+      icon: Radio,
+      sublabel: 'GREY • MONITORING UNAVAILABLE',
+      descTe: 'ధృవీకరించబడిన రాడార్ సమాచారం అందుబాటులో లేనందున వర్షపు హెచ్చరిక అందుబాటులో లేదు.',
+      descKn: 'ದೃಢೀಕರಿಸಿದ ರಾಡಾರ್ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲದ ಕಾರಣ ಮಳೆ ಎಚ್ಚರಿಕೆ ಲಭ್ಯವಿಲ್ಲ.',
+      descEn: 'Rain warning unavailable — insufficient verified radar data.',
+    },
   };
 
-  const currentConfig = levelConfig[level] || levelConfig.GREEN;
+  const currentConfig = (levelConfig as any)[level] || levelConfig.GREEN;
   const Icon = currentConfig.icon;
 
   const getExplanation = () => {
+    // Critical safety guard: NEVER display dry weather text for a RED or ORANGE alert!
+    if (['RED', 'ORANGE'].includes(level)) {
+      const desc = currentLang === 'te' ? alert.descriptionTe : currentLang === 'kn' ? alert.descriptionKn : alert.description;
+      const descLower = (desc || '').toLowerCase();
+      if (desc && !descLower.includes('dry') && !descLower.includes('stable') && !desc.includes('వర్షం లేదు') && !desc.includes('మಳೆ ಇಲ್ಲ')) {
+        return desc;
+      }
+      return currentConfig[`desc${currentLang === 'te' ? 'Te' : currentLang === 'kn' ? 'Kn' : 'En'}`];
+    }
     if (currentLang === 'te') return alert.descriptionTe || currentConfig.descTe;
     if (currentLang === 'kn') return alert.descriptionKn || currentConfig.descKn;
     return alert.description || currentConfig.descEn;

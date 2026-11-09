@@ -101,6 +101,7 @@ class RadarAnalysisSchema(BaseModel):
 
 class AlertSchema(BaseModel):
     id: Optional[int] = None
+    event_id: Optional[str] = None
     alert_level: Optional[str] = "GREEN"
     color_badge: Optional[str] = "GREEN"
     severity: str
@@ -114,6 +115,7 @@ class AlertSchema(BaseModel):
     source_summary: str
     observation_time: Optional[datetime] = None
     issue_timestamp: datetime
+    expires_at: Optional[datetime] = None
     confidence_score: Optional[float] = None
     is_active: bool = True
 

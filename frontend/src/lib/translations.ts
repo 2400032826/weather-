@@ -32,11 +32,12 @@ export interface Translations {
   refreshing: string;
   offlineBanner: string;
 
-  // Big Rain Alert (Green, Yellow, Orange, Red)
+  // Big Rain Alert (Green, Yellow, Orange, Red, Grey)
   bigAlertGreen: string;
   bigAlertYellow: string;
   bigAlertOrange: string;
   bigAlertRed: string;
+  bigAlertGrey: string;
 
   // Big Notification Button
   turnOnAlertsBtn: string;
@@ -190,6 +191,7 @@ export const translations: Record<Language, Translations> = {
     bigAlertYellow: "వర్షం పడే అవకాశం ఉంది",
     bigAlertOrange: "కడ్లూరు వైపు వర్షం వస్తోంది",
     bigAlertRed: "భారీ వర్షపు హెచ్చరిక",
+    bigAlertGrey: "వర్షపు హెచ్చరిక అందుబాటులో లేదు (రాడార్ డేటా లేదు)",
 
     turnOnAlertsBtn: "🔔 వర్ష అలర్ట్‌లు ఆన్ చేయండి",
     alertsOnBtn: "వర్ష అలర్ట్‌లు ఆన్ (RAIN ALERTS ON)",
@@ -328,6 +330,7 @@ export const translations: Record<Language, Translations> = {
     bigAlertYellow: "ಮಳೆ ಬೀಳುವ ಸಾಧ್ಯತೆಯಿದೆ",
     bigAlertOrange: "ಕಡ್ಲೂರು ಕಡೆಗೆ ಮಳೆ ಬರುತ್ತಿದೆ",
     bigAlertRed: "ಭಾರೀ ಮಳೆಯ ಎಚ್ಚರಿಕೆ",
+    bigAlertGrey: "ಮಳೆ ಎಚ್ಚರಿಕೆ ಲಭ್ಯವಿಲ್ಲ (ರಾಡಾರ್ ಮಾಹಿತಿ ಇಲ್ಲ)",
 
     turnOnAlertsBtn: "🔔 ಮಳೆ ಎಚ್ಚರಿಕೆ ಆನ್ ಮಾಡಿ",
     alertsOnBtn: "ಮಳೆ ಎಚ್ಚರಿಕೆ ಆನ್ (RAIN ALERTS ON)",
@@ -466,6 +469,7 @@ export const translations: Record<Language, Translations> = {
     bigAlertYellow: "RAIN MAY COME",
     bigAlertOrange: "RAIN IS APPROACHING",
     bigAlertRed: "HEAVY RAIN WARNING",
+    bigAlertGrey: "RAIN WARNING UNAVAILABLE (NO RADAR DATA)",
 
     turnOnAlertsBtn: "🔔 TURN ON RAIN ALERTS",
     alertsOnBtn: "RAIN ALERTS ON",

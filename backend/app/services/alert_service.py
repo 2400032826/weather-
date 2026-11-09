@@ -3,21 +3,22 @@ from typing import Dict, Any, List, Optional
 from app.core.config import settings
 
 class AlertColorLevels:
-    GREEN = "GREEN"    # No significant rain detected
-    YELLOW = "YELLOW"  # Possible rainfall approaching
-    ORANGE = "ORANGE"  # Rain detected nearby and moving towards Kadlur
-    RED = "RED"        # Heavy rainfall or severe weather warning
+    GREEN = "GREEN"    # Verified dry weather / normal conditions
+    YELLOW = "YELLOW"  # Possible rainfall approaching (outer 15-30 km)
+    ORANGE = "ORANGE"  # Rain detected nearby (5-15 km) and approaching Kadlur
+    RED = "RED"        # Heavy rainfall (>15 mm/h) or severe convective thunderstorm with verified echoes
+    GREY = "GREY"      # Rain warning unavailable — insufficient verified radar data
 
 class AlertService:
     """
     Farmer-First Weather Alert Service for Kadlur Village.
     
-    Adheres strictly to Phase 2 Section 6:
-    - 4 Visual Warning Levels: GREEN, YELLOW, ORANGE, RED
-    - Complete details: What is happening, Distance, Estimated time, Source, Observation time, Confidence.
-    - Farmer-friendly translations in Telugu (తెలుగు) and Kannada (ಕನ್ನಡ).
-    - Prevents false or unsupported warnings.
-    - Never fabricates confidence scores.
+    Strict Evidence Validation:
+    - Never classifies dry conditions as a heavy-rain warning.
+    - Requires genuine radar echoes or verified ground rainfall for warning levels.
+    - If radar data is unavailable, reports GREY ('Rain warning unavailable — insufficient verified radar data').
+    - Assigns unique event IDs, creation timestamps, and 30-minute expiration timestamps.
+    - Excludes fabricated distances, intensities, or arrival times.
     """
 
     TRANSLATIONS = {
@@ -25,8 +26,8 @@ class AlertService:
             "title_en": "No Significant Rain Detected",
             "title_te": "ప్రస్తుతం వర్షం సూచన లేదు",
             "title_kn": "ಯಾವುದೇ ಗಮನಾರ್ಹ ಮಳೆಯ ಮುನ್ಸೂಚನೆ ಇಲ್ಲ",
-            "desc_en": "Radar scans and atmospheric models show clear, dry weather within 30 km radius of Kadlur.",
-            "desc_te": "కడ్లూరు చుట్టూ 30 కి.మీ పరిధిలో వర్షపు మేఘాలు లేవు. వాతావరణం అనుకూలంగా ఉంది.",
+            "desc_en": "Doppler radar sweeps confirm dry, stable weather conditions within 30 km radius of Kadlur village.",
+            "desc_te": "కడ్లూరు చుట్టూ 30 కి.మీ పరిధిలో వర్షపు మేఘాలు లేవు. వాతావరణం పొడిగా ఉంది.",
             "desc_kn": "ಕಡ್ಲೂರು ಸುತ್ತಮುತ್ತಲಿನ 30 ಕಿ.ಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿ ಮಳೆ ಮೋಡಗಳಿಲ್ಲ. ಹವಾಮಾನವು ಸಾಮಾನ್ಯವಾಗಿರುತ್ತದೆ."
         },
         AlertColorLevels.YELLOW: {
@@ -52,6 +53,14 @@ class AlertService:
             "desc_en": "Intense rain echoes (>15 mm/h) or thunderstorm registered. Protect harvested paddy, open grain heaps, and seek shelter.",
             "desc_te": "భారీ వర్షం పడే ప్రమాదం (>15 మి.మీ/గం). కళ్లాల్లోని ధాన్యం, పత్తిని తక్షణమే సురక్షిత ప్రాంతాలకు తరలించండి. చెట్ల కింద ఉండవద్దు.",
             "desc_kn": "ಭಾರೀ ಮಳೆಯ ಎಚ್ಚರಿಕೆ (>15 ಮಿಮೀ/ಗಂ). ಕಣದಲ್ಲಿರುವ ಧಾನ್ಯ ಮತ್ತು ಬೆಳೆಗಳನ್ನು ರಕ್ಷಿಸಿ. ಮರಗಳ ಕೆಳಗೆ ನಿಲ್ಲಬೇಡಿ."
+        },
+        AlertColorLevels.GREY: {
+            "title_en": "Rain Warning Unavailable",
+            "title_te": "వర్షపు హెచ్చరిక అందుబాటులో లేదు",
+            "title_kn": "ಮಳೆ ಎಚ್ಚರಿಕೆ ಲಭ್ಯವಿಲ್ಲ",
+            "desc_en": "Rain warning unavailable — insufficient verified radar data.",
+            "desc_te": "ధృవీకరించబడిన రాడార్ సమాచారం అందుబాటులో లేనందున వర్షపు హెచ్చరిక అందుబాటులో లేదు.",
+            "desc_kn": "ದೃಢೀಕರಿಸಿದ ರಾಡಾರ್ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲದ ಕಾರಣ ಮಳೆ ಎಚ್ಚರಿಕೆ ಲಭ್ಯವಿಲ್ಲ."
         }
     }
 
@@ -61,21 +70,88 @@ class AlertService:
         current_weather: Optional[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(minutes=30)
         alerts = []
 
-        is_approaching = radar_summary.get("is_approaching_kadlur", False)
-        rain_detected = radar_summary.get("kadlur_rain_detected", False)
-        intensity = radar_summary.get("kadlur_intensity_mmh", 0.0)
+        radar_status = radar_summary.get("coverage_status", "OPERATIONAL")
+        radar_freshness = radar_summary.get("freshness_status", "Live / Fresh")
+        radar_obs_time = radar_summary.get("radar_observation_time") or now
+        frames_count = radar_summary.get("frames_count", len(radar_summary.get("tile_layers", [])))
+
+        # 1. Check radar availability & evidence sufficiency
+        if radar_status == "UNAVAILABLE" or radar_freshness in ["Unavailable", "Stale"] or frames_count == 0:
+            t = self.TRANSLATIONS[AlertColorLevels.GREY]
+            alerts.append({
+                "id": None,
+                "event_id": f"kadlur_radar_unavailable_{int(now.timestamp()) // 300}",
+                "alert_level": AlertColorLevels.GREY,
+                "color_badge": "GREY",
+                "severity": "UNAVAILABLE",
+                "title": t["title_en"],
+                "description": t["desc_en"],
+                "description_te": t["desc_te"],
+                "description_kn": t["desc_kn"],
+                "distance_km": None,
+                "estimated_arrival_minutes": None,
+                "expected_intensity_mmh": 0.0,
+                "source_summary": "Radar surveillance composite unavailable for Kadlur. Warnings are not fabricated without live radar data.",
+                "observation_time": radar_obs_time,
+                "issue_timestamp": now,
+                "expires_at": expires_at,
+                "confidence_score": None,
+                "is_active": False
+            })
+            return alerts
+
+        is_approaching = bool(radar_summary.get("is_approaching_kadlur", False))
+        rain_detected = bool(radar_summary.get("kadlur_rain_detected", False))
+        intensity = float(radar_summary.get("kadlur_intensity_mmh") or 0.0)
         arrival_min = radar_summary.get("estimated_arrival_minutes")
         dist_km = radar_summary.get("nearest_rain_distance_km")
-        radar_status = radar_summary.get("coverage_status", "OPERATIONAL")
-        radar_obs_time = radar_summary.get("radar_observation_time", now)
-        weather_code = current_weather.get("weather_code") if current_weather else None
 
-        # 1. RED Warning: Severe convective thunderstorm or heavy rain
-        if weather_code in [95, 96, 99] or (intensity and intensity >= settings.HEAVY_RAIN_THRESHOLD_MM):
-            t = self.TRANSLATIONS[AlertColorLevels.RED]
+        weather_code = current_weather.get("weather_code") if current_weather else None
+        current_precip = float(current_weather.get("current_precipitation_mm") or 0.0) if current_weather else 0.0
+
+        # Check for genuine radar or ground rain evidence
+        has_radar_echoes = is_approaching or rain_detected or (dist_km is not None and dist_km <= 30) or (intensity > 0)
+        has_ground_rain = current_precip >= 0.1
+
+        # 2. STRICT SANITY CHECK: If weather is completely dry, NEVER issue a rain warning!
+        if not has_radar_echoes and not has_ground_rain:
+            t = self.TRANSLATIONS[AlertColorLevels.GREEN]
             alerts.append({
+                "id": None,
+                "event_id": "kadlur_dry_normal",
+                "alert_level": AlertColorLevels.GREEN,
+                "color_badge": "GREEN",
+                "severity": "INFO",
+                "title": t["title_en"],
+                "description": t["desc_en"],
+                "description_te": t["desc_te"],
+                "description_kn": t["desc_kn"],
+                "distance_km": None,
+                "estimated_arrival_minutes": None,
+                "expected_intensity_mmh": 0.0,
+                "source_summary": "RainViewer Doppler Composite & Open-Meteo High-Res NWP Grid",
+                "observation_time": radar_obs_time,
+                "issue_timestamp": now,
+                "expires_at": expires_at,
+                "confidence_score": None,
+                "is_active": True
+            })
+            return alerts
+
+        # 3. RED Warning: Requires GENUINE verified heavy rain evidence
+        # Criteria: Intensity >= 15.0 mm/h or convective thunderstorm with confirmed active rain
+        is_severe_thunderstorm = (weather_code in [95, 96, 99]) and (intensity >= 5.0 or current_precip >= 5.0 or (dist_km is not None and dist_km <= 10))
+        is_heavy_rain = intensity >= settings.HEAVY_RAIN_THRESHOLD_MM or current_precip >= settings.HEAVY_RAIN_THRESHOLD_MM
+
+        if is_heavy_rain or is_severe_thunderstorm:
+            t = self.TRANSLATIONS[AlertColorLevels.RED]
+            obs_epoch = int(radar_obs_time.timestamp()) if isinstance(radar_obs_time, datetime) else int(now.timestamp())
+            alerts.append({
+                "id": None,
+                "event_id": f"evt_RED_{obs_epoch}_{int(intensity * 10)}",
                 "alert_level": AlertColorLevels.RED,
                 "color_badge": "RED",
                 "severity": "CRITICAL",
@@ -83,21 +159,25 @@ class AlertService:
                 "description": t["desc_en"],
                 "description_te": t["desc_te"],
                 "description_kn": t["desc_kn"],
-                "distance_km": dist_km if dist_km is not None else 10.0,
-                "estimated_arrival_minutes": arrival_min if arrival_min else 15,
-                "expected_intensity_mmh": intensity if intensity > 0 else 18.0,
-                "source_summary": "Doppler Radar Echo Reflectivity > 45 dBZ & Convective Weather Detection",
+                "distance_km": dist_km if dist_km is not None else (0.0 if rain_detected else None),
+                "estimated_arrival_minutes": arrival_min if arrival_min is not None else (0 if rain_detected else None),
+                "expected_intensity_mmh": intensity if intensity > 0 else (current_precip if current_precip > 0 else None),
+                "source_summary": "Doppler Radar Echo Reflectivity > 45 dBZ & Convective Rain Detection",
                 "observation_time": radar_obs_time,
                 "issue_timestamp": now,
+                "expires_at": expires_at,
                 "confidence_score": None,
                 "is_active": True
             })
             return alerts
 
-        # 2. ORANGE Warning: Rain detected nearby (within 5-15 km) and moving towards Kadlur
-        if (is_approaching and arrival_min and arrival_min <= 30) or (rain_detected and dist_km and dist_km <= 15):
+        # 4. ORANGE Warning: Rain detected nearby (within 5-15 km) and moving towards Kadlur
+        if (is_approaching and arrival_min and arrival_min <= 30) or (rain_detected and dist_km is not None and dist_km <= 15) or (current_precip >= 2.5):
             t = self.TRANSLATIONS[AlertColorLevels.ORANGE]
+            obs_epoch = int(radar_obs_time.timestamp()) if isinstance(radar_obs_time, datetime) else int(now.timestamp())
             alerts.append({
+                "id": None,
+                "event_id": f"evt_ORANGE_{obs_epoch}_{int((dist_km or 0) * 10)}",
                 "alert_level": AlertColorLevels.ORANGE,
                 "color_badge": "ORANGE",
                 "severity": "WARNING",
@@ -105,21 +185,25 @@ class AlertService:
                 "description": t["desc_en"],
                 "description_te": t["desc_te"],
                 "description_kn": t["desc_kn"],
-                "distance_km": dist_km if dist_km is not None else 8.5,
-                "estimated_arrival_minutes": arrival_min if arrival_min else 20,
-                "expected_intensity_mmh": intensity if intensity > 0 else 5.0,
+                "distance_km": dist_km,
+                "estimated_arrival_minutes": arrival_min,
+                "expected_intensity_mmh": intensity if intensity > 0 else (current_precip if current_precip > 0 else None),
                 "source_summary": "RainViewer Doppler Composite Motion Tracking",
                 "observation_time": radar_obs_time,
                 "issue_timestamp": now,
+                "expires_at": expires_at,
                 "confidence_score": None,
                 "is_active": True
             })
             return alerts
 
-        # 3. YELLOW Warning: Possible rain approaching in outer 15-30 km zone
-        if is_approaching or (dist_km is not None and dist_km <= 30):
+        # 5. YELLOW Warning: Possible rain approaching in outer 15-30 km zone
+        if is_approaching or (dist_km is not None and dist_km <= 30) or (current_precip >= 0.1):
             t = self.TRANSLATIONS[AlertColorLevels.YELLOW]
+            obs_epoch = int(radar_obs_time.timestamp()) if isinstance(radar_obs_time, datetime) else int(now.timestamp())
             alerts.append({
+                "id": None,
+                "event_id": f"evt_YELLOW_{obs_epoch}_{int((dist_km or 0) * 10)}",
                 "alert_level": AlertColorLevels.YELLOW,
                 "color_badge": "YELLOW",
                 "severity": "WATCH",
@@ -127,44 +211,37 @@ class AlertService:
                 "description": t["desc_en"],
                 "description_te": t["desc_te"],
                 "description_kn": t["desc_kn"],
-                "distance_km": dist_km if dist_km is not None else 22.0,
-                "estimated_arrival_minutes": arrival_min if arrival_min else 45,
-                "expected_intensity_mmh": intensity if intensity > 0 else 2.5,
+                "distance_km": dist_km,
+                "estimated_arrival_minutes": arrival_min,
+                "expected_intensity_mmh": intensity if intensity > 0 else (current_precip if current_precip > 0 else None),
                 "source_summary": "RainViewer Radar Surveillance (30 km Radius)",
                 "observation_time": radar_obs_time,
                 "issue_timestamp": now,
+                "expires_at": expires_at,
                 "confidence_score": None,
                 "is_active": True
             })
             return alerts
 
-        # 4. GREEN Status: Normal, no significant rain detected
+        # 6. Default Normal / Dry Weather
         t = self.TRANSLATIONS[AlertColorLevels.GREEN]
-        if radar_status == "UNAVAILABLE":
-            desc_en = "Radar surveillance composite temporarily unavailable. Open-Meteo NWP atmospheric models indicate dry conditions within Kadlur."
-            desc_te = "రాడార్ పర్యవేక్షణ తాత్కాలికంగా అందుబాటులో లేదు. వాతావరణ మోడల్ ప్రకారం కడ్లూరులో ప్రస్తుతం వర్ష సూచన లేదు."
-            desc_kn = "ರಾಡಾರ್ ಲಭ್ಯವಿಲ್ಲ. ಹವಾಮಾನ ಮಾದರಿಯ ಪ್ರಕಾರ ಕಡ್ಲೂರುನಲ್ಲಿ ಪ್ರಸ್ತುತ ಮಳೆಯ ಮುನ್ಸೂಚನೆ ಇಲ್ಲ."
-            source_sum = "Open-Meteo High-Res NWP Model (Radar surveillance unavailable)"
-        else:
-            desc_en = t["desc_en"]
-            desc_te = t["desc_te"]
-            desc_kn = t["desc_kn"]
-            source_sum = "RainViewer Radar Composite & Open-Meteo High-Res NWP Grid"
-
         alerts.append({
+            "id": None,
+            "event_id": "kadlur_dry_normal",
             "alert_level": AlertColorLevels.GREEN,
             "color_badge": "GREEN",
             "severity": "INFO",
             "title": t["title_en"],
-            "description": desc_en,
-            "description_te": desc_te,
-            "description_kn": desc_kn,
+            "description": t["desc_en"],
+            "description_te": t["desc_te"],
+            "description_kn": t["desc_kn"],
             "distance_km": None,
             "estimated_arrival_minutes": None,
             "expected_intensity_mmh": 0.0,
-            "source_summary": source_sum,
+            "source_summary": "RainViewer Radar Composite & Open-Meteo High-Res NWP Grid",
             "observation_time": radar_obs_time,
             "issue_timestamp": now,
+            "expires_at": expires_at,
             "confidence_score": None,
             "is_active": True
         })

@@ -73,6 +73,8 @@ class WeatherAlertRecord(Base):
     description_kn = Column(Text, nullable=True)   # Kannada translation
     
     issue_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=True, index=True)
+    event_id = Column(String(100), nullable=True, index=True)
     data_observation_timestamp = Column(DateTime, nullable=False)
     estimated_arrival_time = Column(DateTime, nullable=True)
     expected_rainfall_intensity_mmh = Column(Float, nullable=True)

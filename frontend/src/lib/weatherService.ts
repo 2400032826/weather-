@@ -75,9 +75,9 @@ export interface KadlurWeatherState {
   hourly7d: HourlyForecastItem[];
   daily10d: DailyForecastItem[];
 
-  // 4 Visual Warning Levels: GREEN, YELLOW, ORANGE, RED
+  // Warning Levels: GREEN (Normal), YELLOW (Advisory), ORANGE (Watch), RED (Critical), GREY (Unavailable)
   activeAlert: {
-    level: 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED';
+    level: 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED' | 'GREY';
     severity: string;
     title: string;
     description: string;
@@ -87,8 +87,10 @@ export interface KadlurWeatherState {
     estimatedArrivalMinutes?: number;
     expectedIntensityMmh?: number;
     sourceSummary: string;
-    confidence: number;
+    confidence?: number;
     observationTime: string;
+    eventId?: string;
+    expiresAt?: string;
   };
 
   // Provider Freshness List
@@ -107,6 +109,24 @@ export function getCachedKadlurWeather(): KadlurWeatherState | null {
     if (raw) {
       const data = JSON.parse(raw);
       if (data && typeof data === 'object' && typeof data.temperature === 'number') {
+        // Sanitize stale or contradictory alerts in local cache
+        if (data.activeAlert) {
+          const isDry = (!data.currentRainfall || data.currentRainfall < 0.1) &&
+                        !data.rainDetected &&
+                        !data.isApproaching;
+          if (isDry && ['RED', 'ORANGE', 'YELLOW'].includes(data.activeAlert.level)) {
+            data.activeAlert.level = 'GREEN';
+            data.activeAlert.severity = 'INFO';
+            data.activeAlert.title = 'No Significant Rain Detected';
+            data.activeAlert.description = 'Doppler radar sweeps confirm dry, stable weather conditions within 30 km radius of Kadlur village.';
+            data.activeAlert.descriptionTe = 'కడ్లూరు చుట్టూ 30 కి.మీ పరిధిలో వర్షపు మేఘాలు లేవు. వాతావరణం పొడిగా ఉంది.';
+            data.activeAlert.descriptionKn = 'ಕಡ್ಲೂರು ಸುತ್ತಮುತ್ತಲಿನ 30 ಕಿ.ಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿ ಮಳೆ ಮೋಡಗಳಿಲ್ಲ. ಹವಾಮಾನವು ಸಾಮಾನ್ಯವಾಗಿರುತ್ತದೆ.';
+            data.activeAlert.eventId = 'kadlur_dry_normal';
+            try {
+              localStorage.setItem('raithu_alert_cache', JSON.stringify(data));
+            } catch (e) {}
+          }
+        }
         data.isFromCache = true;
         return data as KadlurWeatherState;
       }
@@ -340,20 +360,55 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
           conditionText: d.condition_text ?? "Clear sky"
         })),
 
-        activeAlert: {
-          level: (primaryAlert?.alert_level as any) || (primaryAlert?.color_badge as any) || "GREEN",
-          severity: primaryAlert?.severity ?? "INFO",
-          title: primaryAlert?.title ?? "No Significant Rain Detected",
-          description: primaryAlert?.description ?? "Stable atmospheric conditions within 30 km radius of Kadlur.",
-          descriptionTe: primaryAlert?.description_te ?? "కడ్లూరు చుట్టూ 30 కి.మీ పరిధిలో వర్షపు మేఘాలు లేవు. వాతావరణం పొడిగా ఉంది.",
-          descriptionKn: primaryAlert?.description_kn ?? "ಕಡ್ಲೂರು ಸುತ್ತಮುತ್ತಲಿನ 30 ಕಿ.ಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿ ಮಳೆ ಮೋಡಗಳಿಲ್ಲ.",
-          distanceKm: primaryAlert?.distance_km,
-          estimatedArrivalMinutes: primaryAlert?.estimated_arrival_minutes,
-          expectedIntensityMmh: primaryAlert?.expected_intensity_mmh,
-          sourceSummary: primaryAlert?.source_summary ?? "IMD Radar Composite & Open-Meteo",
-          confidence: primaryAlert?.confidence_score ?? 0.94,
-          observationTime: primaryAlert?.observation_time || new Date().toISOString()
-        },
+        activeAlert: (() => {
+          const rawLevel = (primaryAlert?.alert_level as any) || (primaryAlert?.color_badge as any) || "GREEN";
+          const hasRainEchoes = Boolean(
+            r?.kadlur_rain_detected ||
+            r?.is_approaching_kadlur ||
+            (r?.nearest_rain_distance_km != null && r?.nearest_rain_distance_km <= 30) ||
+            (cw?.current_precipitation_mm != null && cw.current_precipitation_mm >= 0.1)
+          );
+
+          let validatedLevel: 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED' | 'GREY' = rawLevel;
+          let alertTitle = primaryAlert?.title || "No Significant Rain Detected";
+          let alertDesc = primaryAlert?.description || "Doppler radar sweeps confirm dry, stable weather conditions within 30 km radius of Kadlur village.";
+          let alertDescTe = primaryAlert?.description_te || "కడ్లూరు చుట్టూ 30 కి.మీ పరిధిలో వర్షపు మేఘాలు లేవు. వాతావరణం పొడిగా ఉంది.";
+          let alertDescKn = primaryAlert?.description_kn || "ಕಡ್ಲೂರು ಸುತ್ತಮುತ್ತಲಿನ 30 ಕಿ.ಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿ ಮಳೆ ಮೋಡಗಳಿಲ್ಲ.";
+
+          // STRICT CONTRADICTION REJECTION:
+          // Never allow RED / ORANGE / YELLOW when conditions are confirmed dry!
+          if (!hasRainEchoes && ['RED', 'ORANGE', 'YELLOW'].includes(validatedLevel)) {
+            console.warn('Rejecting contradictory alert: ' + validatedLevel + ' during dry weather. Correcting to GREEN.');
+            validatedLevel = 'GREEN';
+            alertTitle = "No Significant Rain Detected";
+            alertDesc = "Doppler radar sweeps confirm dry, stable weather conditions within 30 km radius of Kadlur village.";
+            alertDescTe = "కడ్లూరు చుట్టూ 30 కి.మీ పరిధిలో వర్షపు మేఘాలు లేవు. వాతావరణం పొడిగా ఉంది.";
+            alertDescKn = "ಕಡ್ಲೂರು ಸುತ್ತಮುತ್ತಲಿನ 30 ಕಿ.ಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿ ಮಳೆ ಮೋಡಗಳಿಲ್ಲ.";
+          } else if (r?.coverage_status === 'UNAVAILABLE' && !hasRainEchoes) {
+            validatedLevel = 'GREY';
+            alertTitle = "Rain warning unavailable — insufficient verified radar data";
+            alertDesc = "Unable to verify approaching rainfall because current radar data is unavailable.";
+            alertDescTe = "ధృవీకరించబడిన రాడార్ సమాచారం అందుబాటులో లేనందున వర్షపు హెచ్చరిక అందుబాటులో లేదు.";
+            alertDescKn = "ದೃಢೀಕರಿಸಿದ ರಾಡಾರ್ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲದ ಕಾರಣ ಮಳೆ ಎಚ್ಚರಿಕೆ ಲಭ್ಯವಿಲ್ಲ.";
+          }
+
+          return {
+            level: validatedLevel,
+            severity: validatedLevel === 'RED' ? 'CRITICAL' : validatedLevel === 'ORANGE' ? 'WARNING' : validatedLevel === 'YELLOW' ? 'WATCH' : validatedLevel === 'GREY' ? 'UNAVAILABLE' : 'INFO',
+            title: alertTitle,
+            description: alertDesc,
+            descriptionTe: alertDescTe,
+            descriptionKn: alertDescKn,
+            distanceKm: hasRainEchoes ? primaryAlert?.distance_km : undefined,
+            estimatedArrivalMinutes: hasRainEchoes ? primaryAlert?.estimated_arrival_minutes : undefined,
+            expectedIntensityMmh: hasRainEchoes ? primaryAlert?.expected_intensity_mmh : 0.0,
+            sourceSummary: primaryAlert?.source_summary ?? "IMD Begumpet DWR & Open-Meteo High-Res Grid",
+            confidence: primaryAlert?.confidence_score,
+            observationTime: primaryAlert?.observation_time || new Date().toISOString(),
+            eventId: primaryAlert?.event_id || (validatedLevel === 'GREEN' ? 'kadlur_dry_normal' : (validatedLevel === 'GREY' ? 'kadlur_radar_unavailable' : `evt_${validatedLevel}_${Date.now()}`)),
+            expiresAt: primaryAlert?.expires_at || new Date(Date.now() + 30 * 60 * 1000).toISOString()
+          };
+        })(),
 
         providers: providerList,
         isFromCache: false,
@@ -531,17 +586,68 @@ export async function fetchLiveKadlurWeather(): Promise<KadlurWeatherState> {
       };
     }),
 
-    activeAlert: {
-      level: code in [95, 96, 99] ? "RED" : "GREEN",
-      severity: code in [95, 96, 99] ? "WARNING" : "INFO",
-      title: code in [95, 96, 99] ? "Thunderstorm Warning" : "No Significant Rain Detected",
-      description: "Doppler radar sweeps confirm dry, stable weather conditions within 30 km radius of Kadlur village.",
-      descriptionTe: "కడ్లూరు చుట్టూ 30 కి.మీ పరిధిలో వర్షపు మేఘాలు లేవు. వాతావరణం పొడిగా ఉంది.",
-      descriptionKn: "ಕಡ್ಲೂರು ಸುತ್ತಮುತ್ತಲಿನ 30 ಕಿ.ಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿ ಮಳೆ ಮೋಡಗಳಿಲ್ಲ. ಹವಾಮಾನವು ಸಾಮಾನ್ಯವಾಗಿರುತ್ತದೆ.",
-      sourceSummary: "RainViewer Composite / Open-Meteo",
-      confidence: 0.94,
-      observationTime: new Date().toISOString()
-    },
+    activeAlert: (() => {
+      const radarAvailable = frames.length > 0;
+      let fallbackLevel: 'GREEN' | 'YELLOW' | 'ORANGE' | 'RED' | 'GREY' = 'GREEN';
+      let fallbackSeverity = 'INFO';
+      let fallbackTitle = 'No Significant Rain Detected';
+      let fallbackDesc = 'Doppler radar sweeps confirm dry, stable weather conditions within 30 km radius of Kadlur village.';
+      let fallbackDescTe = 'కడ్లూరు చుట్టూ 30 కి.మీ పరిధిలో వర్షపు మేఘాలు లేవు. వాతావరణం పొడిగా ఉంది.';
+      let fallbackDescKn = 'ಕಡ್ಲೂರು ಸುತ್ತಮುತ್ತಲಿನ 30 ಕಿ.ಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿ ಮಳೆ ಮೋಡಗಳಿಲ್ಲ. ಹವಾಮಾನವು ಸಾಮಾನ್ಯವಾಗಿರುತ್ತದೆ.';
+
+      if (!radarAvailable) {
+        fallbackLevel = 'GREY';
+        fallbackSeverity = 'UNAVAILABLE';
+        fallbackTitle = 'Rain warning unavailable — insufficient verified radar data';
+        fallbackDesc = 'Unable to verify approaching rainfall because current radar data is unavailable.';
+        fallbackDescTe = 'ధృవీకరించబడిన రాడార్ సమాచారం అందుబాటులో లేనందున వర్షపు హెచ్చరిక అందుబాటులో లేదు.';
+        fallbackDescKn = 'ದೃಢೀಕರಿಸಿದ ರಾಡಾರ್ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲದ ಕಾರಣ ಮಳೆ ಎಚ್ಚರಿಕೆ ಲಭ್ಯವಿಲ್ಲ.';
+      } else if (precip >= 15.0 || (precip >= 5.0 && [95, 96, 99].includes(code))) {
+        fallbackLevel = 'RED';
+        fallbackSeverity = 'CRITICAL';
+        fallbackTitle = 'Heavy Rainfall / Severe Weather Warning';
+        fallbackDesc = 'Heavy rainfall registered in Kadlur. Protect harvested paddy, open grain heaps, and seek shelter.';
+        fallbackDescTe = 'కడ్లూరులో భారీ వర్షం పడుతోంది. కళ్లాల్లోని ధాన్యం, పత్తిని సురక్షిత ప్రాంతాలకు తరలించండి.';
+        fallbackDescKn = 'ಕಡ್ಲೂರುನಲ್ಲಿ ಭಾರೀ ಮಳೆಯಾಗುತ್ತಿದೆ. ಕಣದಲ್ಲಿರುವ ಧಾನ್ಯ ಮತ್ತು ಬೆಳೆಗಳನ್ನು ರಕ್ಷಿಸಿ.';
+      } else if (precip >= 2.5) {
+        fallbackLevel = 'ORANGE';
+        fallbackSeverity = 'WARNING';
+        fallbackTitle = 'Rain Detected Nearby & Approaching';
+        fallbackDesc = `Precipitation confirmed in Kadlur. Estimated intensity ${precip.toFixed(1)} mm/h.`;
+        fallbackDescTe = `కడ్లూరులో వర్షం కురుస్తోంది. తీవ్రత: ${precip.toFixed(1)} మి.మీ/గం.`;
+        fallbackDescKn = `ಕಡ್ಲೂರುನಲ್ಲಿ ಮಳೆಯಾಗುತ್ತಿದೆ. ತೀವ್ರತೆ: ${precip.toFixed(1)} ಮಿಮೀ/ಗಂ.`;
+      } else if (precip >= 0.1) {
+        fallbackLevel = 'YELLOW';
+        fallbackSeverity = 'WATCH';
+        fallbackTitle = 'Possible Rainfall Approaching';
+        fallbackDesc = 'Light rain observed in Kadlur.';
+        fallbackDescTe = 'కడ్లూరులో తేలికపాటి వర్షం కురుస్తోంది.';
+        fallbackDescKn = 'ಕಡ್ಲೂರುನಲ್ಲಿ ಹಗುರವಾದ ಮಳೆ ಕಂಡುಬಂದಿದೆ.';
+      } else {
+        fallbackLevel = 'GREEN';
+        fallbackSeverity = 'INFO';
+        fallbackTitle = 'No Significant Rain Detected';
+        fallbackDesc = 'Doppler radar sweeps confirm dry, stable weather conditions within 30 km radius of Kadlur village.';
+        fallbackDescTe = 'కడ్లూరు చుట్టూ 30 కి.మీ పరిధిలో వర్షపు మేఘాలు లేవు. వాతావరణం పొడిగా ఉంది.';
+        fallbackDescKn = 'ಕಡ್ಲೂರು ಸುತ್ತಮುತ್ತಲಿನ 30 ಕಿ.ಮೀ ವ್ಯಾಪ್ತಿಯಲ್ಲಿ ಮಳೆ ಮೋಡಗಳಿಲ್ಲ. ಹವಾಮಾನವು ಸಾಮಾನ್ಯವಾಗಿರುತ್ತದೆ.';
+      }
+
+      return {
+        level: fallbackLevel,
+        severity: fallbackSeverity,
+        title: fallbackTitle,
+        description: fallbackDesc,
+        descriptionTe: fallbackDescTe,
+        descriptionKn: fallbackDescKn,
+        distanceKm: precip > 0 ? 0.0 : undefined,
+        estimatedArrivalMinutes: precip > 0 ? 0 : undefined,
+        expectedIntensityMmh: precip > 0 ? precip : 0.0,
+        sourceSummary: radarAvailable ? "RainViewer Composite / Open-Meteo" : "Open-Meteo NWP Grid (Radar surveillance unavailable)",
+        observationTime: frames[frames.length - 1]?.timeIso || new Date().toISOString(),
+        eventId: fallbackLevel === 'GREEN' ? 'kadlur_dry_normal' : (fallbackLevel === 'GREY' ? 'kadlur_radar_unavailable' : `fallback_${fallbackLevel}_${Date.now()}`),
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+      };
+    })(),
 
     providers: defaultProviderList,
     isFromCache: false,
