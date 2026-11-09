@@ -47,30 +47,23 @@ export const HourlyTimeline: React.FC<HourlyTimelineProps> = ({ weather, current
   };
 
   return (
-    <section className="bg-white rounded-3xl p-5 sm:p-7 shadow-sm hover:shadow-md transition-shadow border border-slate-200/80 space-y-4">
+    <section className="bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 shadow-xs border border-slate-200/90 space-y-3">
       {/* Title & Range Switcher */}
-      <div className="flex items-center justify-between border-b border-slate-100 pb-3.5 flex-wrap gap-2.5">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-black shrink-0">
-            <Clock className="w-4 h-4 text-emerald-700" />
-          </div>
-          <div>
-            <h2 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
-              {t.hourlyTitle}
-            </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              {t.hourlySubtitle}
-            </p>
-          </div>
+      <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4 text-emerald-700" />
+          <h2 className="font-black text-slate-900 text-sm sm:text-base tracking-tight">
+            {t.hourlyTitle}
+          </h2>
         </div>
 
         {/* 24h / 48h / 10d Switcher */}
-        <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 text-xs font-bold shadow-inner">
+        <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-bold">
           <button
             onClick={() => setActiveRange('24h')}
-            className={`min-h-[34px] px-3.5 py-1.5 rounded-xl transition-all ${
+            className={`px-2.5 py-1 rounded-lg transition-all ${
               activeRange === '24h'
-                ? 'bg-emerald-800 text-white shadow-sm font-black'
+                ? 'bg-emerald-800 text-white font-black shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -78,9 +71,9 @@ export const HourlyTimeline: React.FC<HourlyTimelineProps> = ({ weather, current
           </button>
           <button
             onClick={() => setActiveRange('48h')}
-            className={`min-h-[34px] px-3.5 py-1.5 rounded-xl transition-all ${
+            className={`px-2.5 py-1 rounded-lg transition-all ${
               activeRange === '48h'
-                ? 'bg-emerald-800 text-white shadow-sm font-black'
+                ? 'bg-emerald-800 text-white font-black shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -88,9 +81,9 @@ export const HourlyTimeline: React.FC<HourlyTimelineProps> = ({ weather, current
           </button>
           <button
             onClick={() => setActiveRange('10d')}
-            className={`min-h-[34px] px-3.5 py-1.5 rounded-xl transition-all ${
+            className={`px-2.5 py-1 rounded-lg transition-all ${
               activeRange === '10d'
-                ? 'bg-emerald-800 text-white shadow-sm font-black'
+                ? 'bg-emerald-800 text-white font-black shadow-xs'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -101,7 +94,7 @@ export const HourlyTimeline: React.FC<HourlyTimelineProps> = ({ weather, current
 
       {/* Horizontal Scrollable Timeline of Farmer Cards */}
       <div className="relative">
-        <div className="overflow-x-auto pb-3 pt-1 flex gap-3 scrollbar-thin scroll-smooth focus:outline-none">
+        <div className="overflow-x-auto pb-2 pt-0.5 flex gap-2.5 scrollbar-thin scroll-smooth focus:outline-none">
           {timeline.map((hour, idx) => {
             const { hourLabel, dateLabel } = formatIstTime(hour.time);
             const isRain = hour.isRainHour || hour.precipitationMm >= 0.1 || (hour.precipitationProbability ?? 0) >= 40;
@@ -112,11 +105,11 @@ export const HourlyTimeline: React.FC<HourlyTimelineProps> = ({ weather, current
             return (
               <div
                 key={idx}
-                className={`flex flex-col items-center justify-between p-3.5 min-w-[110px] sm:min-w-[120px] rounded-2xl border transition-all ${
+                className={`flex flex-col items-center justify-between p-2.5 min-w-[95px] sm:min-w-[105px] rounded-xl border transition-all ${
                   isCurrent
-                    ? 'ring-2 ring-emerald-600 bg-emerald-50/90 border-emerald-300 shadow-sm'
+                    ? 'ring-2 ring-emerald-600 bg-emerald-50/90 border-emerald-300 shadow-2xs'
                     : isRain
-                    ? 'bg-amber-50/80 border-amber-300 shadow-xs'
+                    ? 'bg-amber-50/80 border-amber-300 shadow-2xs'
                     : 'bg-slate-50/80 border-slate-200/90 hover:bg-emerald-50/40'
                 }`}
               >
@@ -125,28 +118,28 @@ export const HourlyTimeline: React.FC<HourlyTimelineProps> = ({ weather, current
                   <div className="flex items-center justify-center gap-1">
                     <span className="text-xs font-black text-slate-900">{hourLabel}</span>
                     {isCurrent && (
-                      <span className="text-[9px] bg-emerald-600 text-white font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                      <span className="text-[9px] bg-emerald-600 text-white font-black px-1.5 py-0.2 rounded-full uppercase">
                         {t.nowBadge}
                       </span>
                     )}
                   </div>
-                  <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                  <span className="text-[10px] text-slate-500 font-medium block">
                     {dateLabel}
                   </span>
                 </div>
 
                 {/* Dynamic Weather Icon & Temperature */}
-                <div className="my-2.5 text-center">
-                  <div className="w-9 h-9 flex items-center justify-center mx-auto">
-                    <HourIcon className={`w-7 h-7 ${iconInfo.colorClass} ${isRain ? 'animate-bounce' : ''}`} />
+                <div className="my-2 text-center">
+                  <div className="w-7 h-7 flex items-center justify-center mx-auto">
+                    <HourIcon className={`w-6 h-6 ${iconInfo.colorClass}`} />
                   </div>
-                  <span className="text-base sm:text-lg font-black text-slate-900 block mt-1">
+                  <span className="text-base font-black text-slate-900 block mt-0.5">
                     {Math.round(hour.temperature)}°C
                   </span>
                 </div>
 
                 {/* Rain Status: Probability & Expected mm */}
-                <div className="w-full pt-2 border-t border-slate-200/70 text-center space-y-1">
+                <div className="w-full pt-1.5 border-t border-slate-200/70 text-center space-y-0.5">
                   <div className="flex items-center justify-center gap-1">
                     <Droplets className={`w-3 h-3 ${isRain ? 'text-amber-600' : 'text-slate-400'}`} />
                     <span className={`text-[11px] font-black ${isRain ? 'text-amber-800' : 'text-slate-600'}`}>
@@ -154,9 +147,9 @@ export const HourlyTimeline: React.FC<HourlyTimelineProps> = ({ weather, current
                     </span>
                   </div>
                   <span
-                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md block truncate ${
+                    className={`text-[9px] font-bold px-1 py-0.2 rounded block truncate ${
                       isRain
-                        ? 'bg-amber-200/80 text-amber-950 font-black'
+                        ? 'bg-amber-200 text-amber-950 font-black'
                         : 'text-slate-500 bg-slate-200/50'
                     }`}
                   >
@@ -170,13 +163,13 @@ export const HourlyTimeline: React.FC<HourlyTimelineProps> = ({ weather, current
       </div>
 
       {/* Forecast Attribution Notice */}
-      <div className="bg-slate-50 rounded-2xl p-3 text-xs text-slate-600 flex items-center justify-between flex-wrap gap-2 border border-slate-200/60">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+      <div className="bg-slate-50 rounded-xl p-2 text-[11px] text-slate-600 flex items-center justify-between flex-wrap gap-1.5 border border-slate-200/60">
+        <div className="flex items-center gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           <span>{t.forecastNotice}</span>
         </div>
-        <div className="text-[11px] text-slate-500 font-mono">
-          Last refreshed: {weather.lastUpdated}
+        <div className="text-[10px] text-slate-500 font-mono">
+          {weather.lastUpdated}
         </div>
       </div>
     </section>

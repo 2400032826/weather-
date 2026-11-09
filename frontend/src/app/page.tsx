@@ -299,13 +299,13 @@ export default function Home() {
           <DashboardSkeleton />
         ) : weatherState ? (
           <>
-            {/* 2.A: CURRENT WEATHER (Temperature, condition, rainfall, wind, last updated) */}
+            {/* 1: CURRENT WEATHER (Immediately at the top: Large temperature, condition, rain, wind, humidity, cloud) */}
             <CurrentWeather
               weather={weatherState}
               currentLang={currentLang}
             />
 
-            {/* 2.B: BIG RAIN ALERT (Large Colourful Cards: GREEN, YELLOW, ORANGE, RED) */}
+            {/* 2: COMPACT RAIN STATUS CARD (Green, Amber, Red, Grey based on verified evidence) */}
             <RainWarningStatus
               weather={weatherState}
               currentLang={currentLang}
@@ -315,24 +315,29 @@ export default function Home() {
               }}
             />
 
-            {/* 2.C: NOTIFICATION BUTTON (🔔 TURN ON RAIN ALERTS / RAIN ALERTS ON) */}
-            <NotificationControl
-              currentLang={currentLang}
-            />
-
-            {/* 3: HOURLY WEATHER (Next 24h, 48h, 10d with dynamic icons) */}
+            {/* 3: HOURLY WEATHER FORECAST (Directly after rain status with dynamic icons) */}
             <HourlyTimeline
               weather={weatherState}
               currentLang={currentLang}
             />
 
-            {/* 4: SIMPLE 10-DAY FORECAST (Day/date, max/min, rain mm, dynamic icons) */}
+            {/* 4: 10-DAY FORECAST (Directly below hourly timeline) */}
             <TenDayForecast
               days={weatherState.daily10d || []}
               currentLang={currentLang}
             />
 
-            {/* 5: SIMPLE RADAR MAP (Centered on Kadlur, distance rings, rain clouds) */}
+            {/* 5: RAIN ALERTS (Notification control) */}
+            <NotificationControl
+              currentLang={currentLang}
+            />
+
+            {/* 6: PWA INSTALL BANNER (Discreet, below primary weather) */}
+            <InstallAppBanner
+              currentLang={currentLang}
+            />
+
+            {/* 7: SIMPLE RADAR MAP & WINDY (Centered on Kadlur) */}
             <div id="radar-section">
               <RainMonitoring
                 weather={weatherState}
@@ -340,13 +345,13 @@ export default function Home() {
               />
             </div>
 
-            {/* 6: QUICK 5 ANSWERS (At-A-Glance Status - Moved to Bottom) */}
+            {/* 8: QUICK 5 ANSWERS (At-A-Glance Status) */}
             <QuickFiveAnswers
               weather={weatherState}
               currentLang={currentLang}
             />
 
-            {/* 7: RAPIDO-STYLE LIVE RAIN SIREN ALARM (Immediately following Quick 5 Answers) */}
+            {/* 9: LIVE RAIN SIREN ALARM CONTROLS */}
             <RainAlarmSettings
               currentLang={currentLang}
             />

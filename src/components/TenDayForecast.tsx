@@ -43,29 +43,24 @@ export const TenDayForecast: React.FC<TenDayForecastProps> = ({ days, currentLan
   if (!days || days.length === 0) return null;
 
   return (
-    <section className="bg-white rounded-3xl p-5 sm:p-7 shadow-sm hover:shadow-md transition-shadow border border-slate-200/80 space-y-4">
+    <section className="bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 shadow-xs border border-slate-200/90 space-y-3">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-100 pb-3.5 flex-wrap gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-black shrink-0">
-            <Calendar className="w-4 h-4 text-emerald-700" />
-          </div>
+      <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-emerald-700" />
           <div>
-            <h2 className="font-black text-slate-900 text-base sm:text-lg tracking-tight">
+            <h2 className="font-black text-slate-900 text-sm sm:text-base tracking-tight">
               {t.tenDayTitle}
             </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              {t.tenDaySubtitle}
-            </p>
           </div>
         </div>
-        <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+        <span className="text-[11px] text-slate-500 font-medium">
           {t.tapForDetails}
         </span>
       </div>
 
       {/* 10-Day Cards List */}
-      <div className="space-y-2.5">
+      <div className="space-y-2">
         {days.map((day, idx) => {
           const isRain = day.precipitationMm >= 0.1 || day.precipitationProbability >= 40;
           const isExpanded = expandedIndex === idx;
