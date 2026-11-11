@@ -1114,7 +1114,7 @@ export interface AdminBroadcastResult {
   errors?: string[];
 }
 
-export async function fetchAdminSubscribersCount(adminKey: string = 'kadlur_admin_secret_2026'): Promise<{
+export async function fetchAdminSubscribersCount(): Promise<{
   active_subscribers: number;
   total_registered: number;
   inactive_or_expired: number;
@@ -1122,12 +1122,8 @@ export async function fetchAdminSubscribersCount(adminKey: string = 'kadlur_admi
   const apiBase = getApiBaseUrl();
   try {
     const res = await withTimeout(
-      fetch(`${apiBase}/api/v1/alerts/admin/subscribers-count`, {
-        headers: {
-          'X-Admin-Key': adminKey
-        }
-      }),
-      6000,
+      fetch(`${apiBase}/api/v1/alerts/admin/subscribers-count`),
+      8000,
       'Subscribers count request timed out'
     );
     if (res.ok) {
@@ -1139,48 +1135,63 @@ export async function fetchAdminSubscribersCount(adminKey: string = 'kadlur_admi
   return { active_subscribers: 0, total_registered: 0, inactive_or_expired: 0 };
 }
 
-export async function sendAdminBroadcastTest(adminKey: string = 'kadlur_admin_secret_2026', force: boolean = false): Promise<AdminBroadcastResult> {
+export async function verifyAdminKey(adminKey: string): Promise<{ success: boolean; message: string }> {
+  if (!adminKey || !adminKey.trim()) {
+    return { success: false, message: 'Please enter the admin key.' };
+  }
   const apiBase = getApiBaseUrl();
   try {
-    const res = await fetch(`${apiBase}/api/v1/alerts/admin/broadcast-test`, {
+    const res = await fetch(`${apiBase}/api/v1/alerts/admin/verify-key`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Admin-Key': adminKey
+        'X-Admin-Key': adminKey.trim()
       },
-      body: JSON.stringify({ admin_key: adminKey, force })
+      body: JSON.stringify({ admin_key: adminKey.trim() })
     });
-    
     if (res.status === 429) {
-      const err = await res.json().catch(() => ({ detail: 'Cooldown active. Please wait before re-broadcasting.' }));
-      throw new Error(err.detail || 'Cooldown active (60s). Please wait before broadcasting again.');
+      const err = await res.json().catch(() => ({ detail: 'Too many attempts. Rate limit enforced.' }));
+      return { success: false, message: err.detail || 'Rate limit enforced: Please wait before trying again.' };
     }
-    
     if (res.status === 401) {
-      throw new Error('Unauthorized: Invalid Admin Secret Key.');
+      return { success: false, message: 'Unauthorized: Incorrect admin key. Please check your Render ADMIN_KEY setting.' };
     }
-    
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: `Server error ${res.status}` }));
-      throw new Error(err.detail || `Server returned error ${res.status}`);
+      return { success: false, message: `Server error (${res.status}).` };
     }
-    
-    return await res.json();
-  } catch (error: any) {
-    if (error.message && (error.message.includes('Failed to fetch') || error.message.includes('NetworkError'))) {
-      return {
-        status: 'simulated_offline',
-        title: 'Raithu Alert — Test Notification',
-        message: 'This is a test notification. Your Raithu Alert notification system is working.',
-        total_subscribers: 1,
-        accepted: 1,
-        failed: 0,
-        expired: 0,
-        timestamp: new Date().toISOString(),
-        delivery_clarification: 'Offline simulation: Backend was not reached directly, but payload schema and service worker structure was validated.',
-        errors: []
-      };
-    }
-    throw error;
+    return { success: true, message: '✓ Admin key verified successfully.' };
+  } catch (e: any) {
+    return { success: false, message: e.message || 'Connection failed.' };
   }
+}
+
+export async function sendAdminBroadcastTest(adminKey: string, force: boolean = false): Promise<AdminBroadcastResult> {
+  if (!adminKey || !adminKey.trim()) {
+    throw new Error('Admin key is required to authorize the test notification broadcast.');
+  }
+  const apiBase = getApiBaseUrl();
+  const res = await fetch(`${apiBase}/api/v1/alerts/admin/broadcast-test`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Admin-Key': adminKey.trim()
+    },
+    body: JSON.stringify({ admin_key: adminKey.trim(), force })
+  });
+  
+  if (res.status === 401) {
+    throw new Error('Unauthorized: Incorrect admin key. Please check your Render ADMIN_KEY setting.');
+  }
+
+  if (res.status === 429) {
+    const err = await res.json().catch(() => ({ detail: 'Rate limit or cooldown active.' }));
+    throw new Error(err.detail || 'Rate limit or broadcast cooldown active. Please wait.');
+  }
+  
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: `Server error ${res.status}` }));
+    throw new Error(err.detail || `Server returned error ${res.status}`);
+  }
+  
+  return await res.json();
 }

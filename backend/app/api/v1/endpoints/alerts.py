@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Request
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+import os
 import time
 import json
 import logging
@@ -22,6 +23,48 @@ logger = logging.getLogger(__name__)
 
 # Rate-limiting / cooldown for broadcasts: at least 60 seconds between broadcasts
 _last_broadcast_time = 0.0
+
+# Rate-limiting failed unauthorized attempts to prevent brute-forcing
+_failed_auth_attempts: Dict[str, List[float]] = {}
+MAX_FAILED_AUTH_ATTEMPTS = 5
+AUTH_LOCKOUT_WINDOW_SECONDS = 300  # 5 minutes
+
+def check_auth_rate_limit(client_ip: str):
+    now = time.time()
+    if client_ip in _failed_auth_attempts:
+        _failed_auth_attempts[client_ip] = [
+            t for t in _failed_auth_attempts[client_ip] if now - t < AUTH_LOCKOUT_WINDOW_SECONDS
+        ]
+        if len(_failed_auth_attempts[client_ip]) >= MAX_FAILED_AUTH_ATTEMPTS:
+            earliest = _failed_auth_attempts[client_ip][0]
+            remaining = int(AUTH_LOCKOUT_WINDOW_SECONDS - (now - earliest))
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Too many failed admin key attempts. Rate limit enforced: please wait {remaining} seconds before trying again."
+            )
+
+def record_auth_failure(client_ip: str):
+    now = time.time()
+    if client_ip not in _failed_auth_attempts:
+        _failed_auth_attempts[client_ip] = []
+    _failed_auth_attempts[client_ip].append(now)
+
+def record_auth_success(client_ip: str):
+    if client_ip in _failed_auth_attempts:
+        _failed_auth_attempts.pop(client_ip, None)
+
+def get_configured_admin_key() -> str:
+    # Validate the key securely using the Render environment variable ADMIN_KEY
+    key = os.environ.get("ADMIN_KEY") or os.environ.get("ADMIN_API_KEY") or getattr(settings, "ADMIN_KEY", None) or getattr(settings, "ADMIN_API_KEY", None)
+    if not key:
+        key = "kadlur_admin_secret_2026"
+    return key.strip()
+
+def extract_client_ip(request: Request) -> str:
+    x_forwarded = request.headers.get("X-Forwarded-For")
+    if x_forwarded:
+        return x_forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 router = APIRouter()
 aggregator = MultiSourceAggregator()
@@ -200,12 +243,10 @@ def trigger_test_alert(payload: Dict[str, Any]):
     }
 
 @router.get("/admin/subscribers-count")
-def get_subscribers_count(
-    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
-    db: Session = Depends(get_db)
-):
+def get_subscribers_count(db: Session = Depends(get_db)):
     """
     Get current counts of registered push subscribers for Kadlur Village.
+    Publicly accessible telemetry for dashboard display; does NOT require an admin key.
     """
     active_count = db.query(PushSubscriptionRecord).filter(PushSubscriptionRecord.is_active == True).count()
     total_count = db.query(PushSubscriptionRecord).count()
@@ -216,31 +257,93 @@ def get_subscribers_count(
         "inactive_or_expired": total_count - active_count
     }
 
+@router.post("/admin/verify-key")
+def verify_admin_key(
+    request: Request,
+    payload: Optional[Dict[str, Any]] = None,
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")
+):
+    """
+    Validates admin key securely using the Render environment variable ADMIN_KEY.
+    Includes rate-limiting to prevent repeated unauthorized attempts.
+    """
+    payload = payload or {}
+    client_ip = extract_client_ip(request)
+    check_auth_rate_limit(client_ip)
+
+    expected_key = get_configured_admin_key()
+    raw_key = (x_admin_key if isinstance(x_admin_key, str) else None) or payload.get("admin_key") or ""
+    provided_key = raw_key.strip()
+
+    if not provided_key or provided_key != expected_key:
+        record_auth_failure(client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Incorrect admin key. Please check your Render ADMIN_KEY setting."
+        )
+
+    record_auth_success(client_ip)
+    return {
+        "status": "success",
+        "verified": True,
+        "message": "Admin key verified successfully."
+    }
+
 @router.post("/admin/broadcast-test")
 def admin_broadcast_test(
+    request: Request,
     payload: Optional[Dict[str, Any]] = None,
     x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
     db: Session = Depends(get_db)
 ):
     """
     Admin Broadcast Test Notification:
+    Requires secure validation against Render environment variable ADMIN_KEY.
     Dispatches a single, non-rain test notification to all active subscribers.
-    Handles expired subscriptions (410/404) by deactivating them.
-    Protected by admin authentication and a 60-second cooldown.
+    If 0 subscribers, strictly does NOT claim notifications were sent.
+    Rate limited against brute force and broadcast spam.
     """
     global _last_broadcast_time
     payload = payload or {}
-    
-    # 1. Admin Authentication Check
-    admin_key = x_admin_key or payload.get("admin_key")
-    configured_key = getattr(settings, "ADMIN_API_KEY", "kadlur_admin_secret_2026")
-    if not admin_key or admin_key.strip() != configured_key:
+    client_ip = extract_client_ip(request)
+
+    # 1. Rate-limiting check for unauthorized attempts
+    check_auth_rate_limit(client_ip)
+
+    # 2. Admin Authentication Check against Render ADMIN_KEY
+    expected_key = get_configured_admin_key()
+    raw_key = (x_admin_key if isinstance(x_admin_key, str) else None) or payload.get("admin_key") or ""
+    provided_key = raw_key.strip()
+
+    if not provided_key or provided_key != expected_key:
+        record_auth_failure(client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized: Invalid admin key for broadcast operations."
+            detail="Unauthorized: Incorrect admin key. Please check your Render ADMIN_KEY setting."
         )
 
-    # 2. Cooldown Rate-Limiting (60 seconds)
+    record_auth_success(client_ip)
+
+    # 3. Check active subscribers first
+    active_subs = db.query(PushSubscriptionRecord).filter(PushSubscriptionRecord.is_active == True).all()
+    total_active = len(active_subs)
+
+    # If zero subscribers, do NOT claim that notifications were sent!
+    if total_active == 0:
+        return {
+            "status": "zero_subscribers",
+            "title": "Raithu Alert — Test Notification",
+            "message": "No active subscribers found in production database. Zero notifications were sent.",
+            "total_subscribers": 0,
+            "accepted": 0,
+            "failed": 0,
+            "expired": 0,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "delivery_clarification": "No notifications were dispatched because there are currently zero active subscribed devices registered in the database.",
+            "errors": []
+        }
+
+    # 4. Cooldown Rate-Limiting (60 seconds)
     now = time.time()
     time_since_last = now - _last_broadcast_time
     force = payload.get("force", False)
@@ -251,11 +354,7 @@ def admin_broadcast_test(
             detail=f"Broadcast cooldown active. Please wait {cooldown_remaining} seconds before sending another test."
         )
 
-    # 3. Fetch active subscribers
-    active_subs = db.query(PushSubscriptionRecord).filter(PushSubscriptionRecord.is_active == True).all()
-    total_active = len(active_subs)
-
-    # 4. Strictly required notification content
+    # 5. Strictly required notification content
     notification_data = {
         "title": "Raithu Alert — Test Notification",
         "body": "This is a test notification. Your Raithu Alert notification system is working.",
@@ -280,59 +379,57 @@ def admin_broadcast_test(
     sub_claim = f"mailto:{vapid_claim_email}" if not vapid_claim_email.startswith("mailto:") else vapid_claim_email
     vapid_claims = {"sub": sub_claim}
 
-    if total_active > 0:
-        if webpush is None:
-            failed_count = total_active
-            errors_list.append("pywebpush package not loaded in backend runtime")
-        else:
-            for sub in active_subs:
-                # Validate subscriber keys
-                if not sub.p256dh or not sub.auth:
-                    # Invalid format
-                    failed_count += 1
-                    continue
+    if webpush is None:
+        failed_count = total_active
+        errors_list.append("pywebpush package not loaded in backend runtime")
+    else:
+        for sub in active_subs:
+            # Validate subscriber keys
+            if not sub.p256dh or not sub.auth:
+                failed_count += 1
+                continue
 
-                sub_info = {
-                    "endpoint": sub.endpoint,
-                    "keys": {
-                        "p256dh": sub.p256dh,
-                        "auth": sub.auth
-                    }
+            sub_info = {
+                "endpoint": sub.endpoint,
+                "keys": {
+                    "p256dh": sub.p256dh,
+                    "auth": sub.auth
                 }
-                try:
-                    res = webpush(
-                        subscription_info=sub_info,
-                        data=notification_json,
-                        vapid_private_key=vapid_private_key,
-                        vapid_claims=vapid_claims,
-                        ttl=120,
-                        timeout=10
-                    )
-                    status_code = getattr(res, "status_code", 201)
-                    if status_code in [200, 201]:
-                        accepted_count += 1
-                    else:
-                        accepted_count += 1
-                except WebPushException as ex:
-                    res_status = getattr(ex.response, "status_code", None) if hasattr(ex, "response") else None
-                    if res_status in [404, 410]:
-                        # Expired or unregistered subscription
-                        sub.is_active = False
-                        expired_count += 1
-                    else:
-                        failed_count += 1
-                        msg = str(ex)
-                        if len(errors_list) < 5:
-                            errors_list.append(f"HTTP {res_status}: {msg[:100]}")
-                except Exception as e:
-                    failed_count += 1
-                    if len(errors_list) < 5:
-                        errors_list.append(str(e)[:100])
-
+            }
             try:
-                db.commit()
-            except Exception:
-                db.rollback()
+                res = webpush(
+                    subscription_info=sub_info,
+                    data=notification_json,
+                    vapid_private_key=vapid_private_key,
+                    vapid_claims=vapid_claims,
+                    ttl=120,
+                    timeout=10
+                )
+                status_code = getattr(res, "status_code", 201)
+                if status_code in [200, 201]:
+                    accepted_count += 1
+                else:
+                    accepted_count += 1
+            except WebPushException as ex:
+                res_status = getattr(ex.response, "status_code", None) if hasattr(ex, "response") else None
+                if res_status in [404, 410]:
+                    # Expired or unregistered subscription
+                    sub.is_active = False
+                    expired_count += 1
+                else:
+                    failed_count += 1
+                    msg = str(ex)
+                    if len(errors_list) < 5:
+                        errors_list.append(f"HTTP {res_status}: {msg[:100]}")
+            except Exception as e:
+                failed_count += 1
+                if len(errors_list) < 5:
+                    errors_list.append(str(e)[:100])
+
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
 
     _last_broadcast_time = now
 

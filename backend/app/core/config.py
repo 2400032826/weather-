@@ -82,11 +82,12 @@ class Settings(BaseSettings):
     HEAVY_RAIN_THRESHOLD_MM: float = 15.0      # >= 15 mm/h considered heavy rain (IMD criteria)
     VERY_HEAVY_RAIN_THRESHOLD_MM: float = 35.0
     
-    # Web Push Notifications & Admin
+    # Web Push Notifications & Admin (Configured via Render Environment Variables)
     VAPID_PUBLIC_KEY: str = "BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U"
     VAPID_PRIVATE_KEY: Optional[str] = "UUxI4O8-FbRouAevSmBQ6o18hgE4nSG3qwvJTfKc-ls"
     VAPID_CLAIM_EMAIL: str = "admin@kadlur-weather.org"
-    ADMIN_API_KEY: str = "kadlur_admin_secret_2026"
+    ADMIN_KEY: Optional[str] = None
+    ADMIN_API_KEY: Optional[str] = None
     
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000", "*"]
