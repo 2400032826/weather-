@@ -1,280 +1,376 @@
 import React, { useState, useEffect } from 'react';
 import {
   Bell,
-  BellRing,
   CheckCircle2,
-  AlertCircle,
+  AlertTriangle,
   Send,
   Loader2,
   PowerOff,
   ShieldCheck,
+  Smartphone,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle,
+  RefreshCw,
+  Info
 } from 'lucide-react';
 import type { Language } from '../lib/translations';
-import { translations } from '../lib/translations';
-import type { NotificationButtonState } from '../lib/weatherService';
 import {
   registerPushNotification,
   unsubscribePushNotification,
-  sendTestNotification,
   checkDeviceSubscriptionStatus,
+  sendTestNotificationToThisDevice,
+  type DeviceTestPushResult,
+  type DeviceSubscriptionInfo
 } from '../lib/weatherService';
 
 interface NotificationControlProps {
   currentLang: Language;
 }
 
+export type RegistrationStatus = 
+  | 'NOT_REGISTERED' 
+  | 'REGISTERING' 
+  | 'VERIFIED' 
+  | 'PERMISSION_DENIED' 
+  | 'REGISTRATION_FAILED';
+
 export const NotificationControl: React.FC<NotificationControlProps> = ({ currentLang }) => {
-  const t = translations[currentLang];
-  const [buttonState, setButtonState] = useState<NotificationButtonState>('OFF');
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [testSentMessage, setTestSentMessage] = useState<string | null>(null);
-  const [isSendingTest, setIsSendingTest] = useState<boolean>(false);
-  const [isCheckingDb, setIsCheckingDb] = useState<boolean>(false);
+  const [status, setStatus] = useState<RegistrationStatus>('NOT_REGISTERED');
+  const [statusDetail, setStatusDetail] = useState<string>('');
+  const [deviceInfo, setDeviceInfo] = useState<DeviceSubscriptionInfo | null>(null);
+  const [isChecking, setIsChecking] = useState<boolean>(true);
 
-  // Initialize and verify database subscription safely on mount
+  // Test Notification state
+  const [isSendingDeviceTest, setIsSendingDeviceTest] = useState<boolean>(false);
+  const [testResult, setTestResult] = useState<DeviceTestPushResult | null>(null);
+
+  // Troubleshooting collapsible toggle
+  const [showTroubleshooting, setShowTroubleshooting] = useState<boolean>(false);
+
+  // Check subscription status from the backend database on initial mount
+  const checkStatusFromDatabase = async (autoSync: boolean = false) => {
+    setIsChecking(true);
+    setStatusDetail('');
+    try {
+      const info = await checkDeviceSubscriptionStatus(currentLang, autoSync);
+      setDeviceInfo(info);
+
+      if (info.permission === 'denied') {
+        setStatus('PERMISSION_DENIED');
+        setStatusDetail(
+          currentLang === 'te'
+            ? 'నోటిఫికేషన్లు బ్లాక్ చేయబడ్డాయి. బ్రౌజర్ సెట్టింగ్‌లలో ప్రారంభించండి.'
+            : currentLang === 'kn'
+            ? 'ನೋಟಿಫಿಕೇಶನ್‌ಗಳು ನಿರ್ಬಂಧಿಸಲಾಗಿದೆ. ಬ್ರೌಸರ್ ಸೆಟ್ಟಿಂಗ್‌ಗಳಲ್ಲಿ ಸಕ್ರಿಯಗೊಳಿಸಿ.'
+            : 'Notifications are blocked. Enable them in your browser settings.'
+        );
+      } else if (info.databaseVerified && info.isSubscribed) {
+        setStatus('VERIFIED');
+        setStatusDetail(
+          currentLang === 'te'
+            ? 'మీ మొబైల్ వర్ష అలర్ట్‌ల కోసం విజయవంతంగా నమోదైంది.'
+            : currentLang === 'kn'
+            ? 'ನಿಮ್ಮ ಮೊಬೈಲ್ ಮಳೆ ಎಚ್ಚರಿಕೆಗಳಿಗಾಗಿ ಯಶಸ್ವಿಯಾಗಿ ನೋಂದಾಯಿಸಲಾಗಿದೆ.'
+            : 'Your mobile is successfully registered for rain alerts.'
+        );
+      } else {
+        setStatus('NOT_REGISTERED');
+        setStatusDetail(
+          currentLang === 'te'
+            ? 'మీ మొబైల్ వర్ష అలర్ట్‌ల కోసం నమోదు చేయబడలేదు.'
+            : currentLang === 'kn'
+            ? 'ನಿಮ್ಮ ಮೊಬೈಲ್ ಮಳೆ ಎಚ್ಚರಿಕೆಗಳಿಗಾಗಿ ನೋಂದಾಯಿಸಲಾಗಿಲ್ಲ.'
+            : 'Your mobile is not registered for rain alerts.'
+        );
+      }
+    } catch (err: any) {
+      setStatus('NOT_REGISTERED');
+      setStatusDetail(err?.message || 'Status check failed.');
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
   useEffect(() => {
-    let isMounted = true;
-    if (typeof window === 'undefined') return;
-
-    if (!('Notification' in window)) {
-      setButtonState('OFF');
-      return;
-    }
-
-    if (Notification.permission === 'denied') {
-      setButtonState('DENIED');
-      return;
-    }
-
-    setIsCheckingDb(true);
-    checkDeviceSubscriptionStatus(currentLang, true)
-      .then((info) => {
-        if (!isMounted) return;
-        setIsCheckingDb(false);
-        if (info.databaseVerified && info.isSubscribed) {
-          setButtonState('ON');
-          setStatusMessage('✓ Active: Registered and verified in production database');
-        } else if (Notification.permission === 'granted') {
-          setButtonState('OFF');
-          setStatusMessage(info.message);
-        } else {
-          setButtonState('OFF');
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setIsCheckingDb(false);
-          setButtonState('OFF');
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
+    checkStatusFromDatabase(true);
   }, [currentLang]);
 
-  // Main Action: Turn On Alerts (Step 1 to Step 6)
+  // Main Action: Turn On Rain Alerts (Strict 8-Step Flow with Database Verification)
   const handleTurnOnAlerts = async () => {
-    setButtonState('ACTIVATING');
-    setStatusMessage(null);
-    setTestSentMessage(null);
+    setStatus('REGISTERING');
+    setStatusDetail(
+      currentLang === 'te'
+        ? 'మీ మొబైల్‌ను నమోదు చేస్తున్నాము. దయచేసి వేచి ఉండండి...'
+        : currentLang === 'kn'
+        ? 'ನಿಮ್ಮ ಮೊಬೈಲ್ ನೋಂದಾಯಿಸಲಾಗುತ್ತಿದೆ. ದಯವಿಟ್ಟು ಕಾಯಿರಿ...'
+        : 'Registering your mobile. Please wait...'
+    );
+    setTestResult(null);
 
     const result = await registerPushNotification(currentLang, (stepMsg) => {
-      setStatusMessage(stepMsg);
+      setStatusDetail(stepMsg);
     });
 
-    setButtonState(result.state);
-    setStatusMessage(result.message);
-
-    if (result.state === 'ERROR') {
-      setTimeout(() => {
-        // Allow user to try again easily
-        setButtonState('OFF');
-      }, 5000);
+    if (result.success && result.state === 'ON') {
+      setStatus('VERIFIED');
+      setStatusDetail(
+        currentLang === 'te'
+          ? 'మీ మొబైల్ వర్ష అలర్ట్‌ల కోసం విజయవంతంగా నమోదైంది.'
+          : currentLang === 'kn'
+          ? 'ನಿಮ್ಮ ಮೊಬೈಲ್ ಮಳೆ ಎಚ್ಚರಿಕೆಗಳಿಗಾಗಿ ಯಶಸ್ವಿಯಾಗಿ ನೋಂದಾಯಿಸಲಾಗಿದೆ.'
+          : 'Your mobile is successfully registered for rain alerts.'
+      );
+      await checkStatusFromDatabase(false);
+    } else if (result.state === 'DENIED') {
+      setStatus('PERMISSION_DENIED');
+      setStatusDetail(
+        currentLang === 'te'
+          ? 'నోటిఫికేషన్లు బ్లాక్ చేయబడ్డాయి. దయచేసి బ్రౌజర్ సెట్టింగ్‌లలో ప్రారంభించండి.'
+          : currentLang === 'kn'
+          ? 'ನೋಟಿಫಿಕೇಶನ್‌ಗಳು ನಿರ್ಬಂಧಿಸಲಾಗಿದೆ. ದಯವಿಟ್ಟು ಬ್ರೌಸರ್ ಸೆಟ್ಟಿಂಗ್‌ಗಳಲ್ಲಿ ಸಕ್ರಿಯಗೊಳಿಸಿ.'
+          : 'Notifications are blocked. Enable them in your browser settings.'
+      );
+    } else {
+      setStatus('REGISTRATION_FAILED');
+      setStatusDetail(result.message || 'Registration failed. Please check connection and retry.');
     }
   };
 
   // Turn Off Alerts
   const handleTurnOffAlerts = async () => {
-    setButtonState('ACTIVATING');
-    setStatusMessage('Unsubscribing...');
-    const result = await unsubscribePushNotification();
-    setButtonState(result.state);
-    setStatusMessage(
+    setStatus('REGISTERING');
+    setStatusDetail('Unsubscribing...');
+    await unsubscribePushNotification();
+    setStatus('NOT_REGISTERED');
+    setStatusDetail(
       currentLang === 'te'
-        ? 'వర్ష అలర్ట్‌లు ఆఫ్ చేయబడ్డాయి.'
+        ? 'మీ మొబైల్ వర్ష అలర్ట్‌ల కోసం నమోదు చేయబడలేదు.'
         : currentLang === 'kn'
-        ? 'ಮಳೆ ಎಚ್ಚರಿಕೆಗಳನ್ನು ಆಫ್ ಮಾಡಲಾಗಿದೆ.'
-        : 'Rain alerts turned off.'
+        ? 'ನಿಮ್ಮ ಮೊಬೈಲ್ ಮಳೆ ಎಚ್ಚರಿಕೆಗಳಿಗಾಗಿ ನೋಂದಾಯಿಸಲಾಗಿಲ್ಲ.'
+        : 'Your mobile is not registered for rain alerts.'
     );
-    setTestSentMessage(null);
+    setTestResult(null);
+    await checkStatusFromDatabase(false);
   };
 
-  // Test Notification Dispatch
-  const handleSendTest = async () => {
-    setIsSendingTest(true);
-    setTestSentMessage(
-      currentLang === 'te'
-        ? 'పరీక్షా నోటిఫికేషన్ పంపుతున్నాము...'
-        : currentLang === 'kn'
-        ? 'ಪರೀಕ್ಷಾ ಸಂದೇಶ ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ...'
-        : 'Dispatching test notification...'
-    );
+  // Send Test Notification to THIS device only
+  const handleTestThisDevice = async () => {
+    setIsSendingDeviceTest(true);
+    setTestResult(null);
 
-    const res = await sendTestNotification(currentLang);
-    setIsSendingTest(false);
-    setTestSentMessage(res.message);
-
-    setTimeout(() => {
-      setTestSentMessage(null);
-    }, 6000);
-  };
-
-  // Farmer-friendly onboarding helper text
-  const getOnboardingIntro = () => {
-    if (currentLang === 'te') {
-      return 'కడ్లూరు వైపు వర్షం వచ్చినప్పుడు హెచ్చరికలు పొందడానికి అలర్ట్‌లను ప్రారంభించండి.';
-    }
-    if (currentLang === 'kn') {
-      return 'ಕಡ್ಲೂರು ಕಡೆಗೆ ಮಳೆ ಬಂದಾಗ ಎಚ್ಚರಿಕೆಗಳನ್ನು ಪಡೆಯಲು ಅಲರ್ಟ್‌ಗಳನ್ನು ಪ್ರಾರಂಭಿಸಿ.';
-    }
-    return 'Enable rain alerts to receive warnings when rain approaches Kadlur.';
-  };
-
-  // Button Label by State
-  const getButtonLabel = () => {
-    switch (buttonState) {
-      case 'ACTIVATING':
-        return currentLang === 'te'
-          ? 'అలర్ట్‌లు సిద్ధం చేస్తున్నాము...'
-          : currentLang === 'kn'
-          ? 'ಎಚ್ಚರಿಕೆಗಳನ್ನು ಸಿದ್ಧಪಡಿಸಲಾಗುತ್ತಿದೆ...'
-          : 'SETTING UP ALERTS...';
-
-      case 'ON':
-        return currentLang === 'te'
-          ? '✓ వర్ష అలర్ట్‌లు ఆన్ (RAIN ALERTS ON)'
-          : currentLang === 'kn'
-          ? '✓ ಮಳೆ ಎಚ್ಚರಿಕೆ ಆನ್ (RAIN ALERTS ON)'
-          : '✓ RAIN ALERTS ON';
-
-      case 'DENIED':
-        return currentLang === 'te'
-          ? 'నోటిఫికేషన్లు బ్లాక్ చేయబడ్డాయి'
-          : currentLang === 'kn'
-          ? 'ನೋಟಿಫಿಕೇಶನ್‌ಗಳು ನಿರ್ಬಂಧಿಸಲಾಗಿದೆ'
-          : 'NOTIFICATIONS BLOCKED';
-
-      case 'ERROR':
-        return currentLang === 'te'
-          ? 'విఫలమైంది – మళ్లీ ప్రయత్నించండి'
-          : currentLang === 'kn'
-          ? 'ವಿಫಲವಾಗಿದೆ – ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ'
-          : 'SETUP FAILED – TRY AGAIN';
-
-      case 'OFF':
-      default:
-        return currentLang === 'te'
-          ? 'వర్ష సూచనలను పొందడానికి ప్రారంభించండి'
-          : currentLang === 'kn'
-          ? 'ಮಳೆ ಎಚ್ಚರಿಕೆಗಳನ್ನು ಪಡೆಯಲು ಪ್ರಾರಂಭಿಸಿ'
-          : 'TURN ON RAIN ALERTS';
+    try {
+      const res = await sendTestNotificationToThisDevice(currentLang);
+      setTestResult(res);
+      if (res.status === 'subscription_expired' || res.status === 'device_not_registered') {
+        setStatus('NOT_REGISTERED');
+      }
+    } catch (err: any) {
+      setTestResult({
+        status: 'failed',
+        message: `Test notification failed: ${err.message || 'Network error'}`
+      });
+    } finally {
+      setIsSendingDeviceTest(false);
     }
   };
+
+  // Farmer-friendly Multilingual Texts
+  const cardTitle = 
+    currentLang === 'te'
+      ? 'వర్ష అలర్ట్‌లతో అప్రమత్తంగా ఉండండి'
+      : currentLang === 'kn'
+      ? 'ಮಳೆ ಎಚ್ಚರಿಕೆಗಳೊಂದಿಗೆ ಮಾಹಿತಿಯಲ್ಲಿರಿ'
+      : 'Stay Updated with Rain Alerts';
+
+  const cardSubtitle =
+    currentLang === 'te'
+      ? 'కడ్లూరు కోసం ముఖ్యమైన వర్ష హెచ్చరికలను పొందడానికి మీ మొబైల్‌ను నమోదు చేసుకోండి.'
+      : currentLang === 'kn'
+      ? 'ಕಡ್ಲೂರು ಗ್ರಾಮಕ್ಕೆ ಪ್ರಮುಖ ಮಳೆ ಎಚ್ಚರಿಕೆಗಳನ್ನು ಪಡೆಯಲು ನಿಮ್ಮ ಮೊಬೈಲ್ ನೋಂದಾಯಿಸಿ.'
+      : 'Register your mobile to receive important rain warnings for Kadlur.';
+
+  const turnOnLabel =
+    currentLang === 'te'
+      ? 'వర్ష అలర్ట్‌లను ఆన్ చేయండి'
+      : currentLang === 'kn'
+      ? 'ಮಳೆ ಎಚ್ಚರಿಕೆಗಳನ್ನು ಆನ್ ಮಾಡಿ'
+      : 'TURN ON RAIN ALERTS';
+
+  const testMyDeviceLabel =
+    currentLang === 'te'
+      ? 'నా మొబైల్‌లో టెస్ట్ నోటిఫికేషన్'
+      : currentLang === 'kn'
+      ? 'ನನ್ನ ಮೊಬೈಲ್‌ನಲ್ಲಿ ಟೆಸ್ಟ್ ನೋಟಿಫಿಕೇಶನ್'
+      : 'TEST NOTIFICATION ON MY MOBILE';
+
+  const registrationNote =
+    currentLang === 'te'
+      ? 'మీ మొబైల్ నమోదైంది. ధృవీకరించబడిన వర్ష హెచ్చరిక వచ్చినప్పుడు మాత్రమే మీకు నోటిఫికేషన్ అందుతుంది.'
+      : currentLang === 'kn'
+      ? 'ನಿಮ್ಮ ಮೊಬೈಲ್ ನೋಂದಾಯಿಸಲಾಗಿದೆ. ಪರಿಶೀಲಿಸಿದ ಮಳೆ ಎಚ್ಚರಿಕೆ ಬಂದಾಗ ಮಾತ್ರ ನಿಮಗೆ ಸಂದೇಶ ಬರುತ್ತದೆ.'
+      : 'Your mobile is registered. You will receive notifications when a verified rain warning is generated.';
 
   return (
-    <section className="bg-white rounded-3xl p-5 sm:p-7 shadow-sm hover:shadow-md transition-shadow border border-slate-200/80 space-y-4">
-      {/* Header Row */}
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2.5">
-          <div
-            className={`p-2.5 rounded-2xl transition ${
-              buttonState === 'ON'
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {buttonState === 'ON' ? (
-              <BellRing className="w-6 h-6 animate-bounce" />
+    <section className="bg-white rounded-3xl p-5 sm:p-7 shadow-sm border border-slate-200/90 space-y-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 flex-wrap border-b border-slate-100 pb-3">
+        <div className="flex items-center gap-3">
+          <div className={`p-3 rounded-2xl transition ${
+            status === 'VERIFIED'
+              ? 'bg-emerald-100 text-emerald-800'
+              : status === 'PERMISSION_DENIED'
+              ? 'bg-rose-100 text-rose-800'
+              : 'bg-emerald-50 text-emerald-700'
+          }`}>
+            {status === 'VERIFIED' ? (
+              <ShieldCheck className="w-6 h-6 text-emerald-700" />
             ) : (
-              <Bell className="w-6 h-6" />
+              <Smartphone className="w-6 h-6 text-emerald-700" />
             )}
           </div>
           <div>
             <h2 className="font-black text-slate-900 text-base sm:text-lg">
-              {t.alertsTitle}
+              {cardTitle}
             </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              {getOnboardingIntro()}
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              {cardSubtitle}
             </p>
           </div>
         </div>
 
-        {/* Status Pill */}
-        <span
-          className={`text-xs font-black px-3 py-1 rounded-full border flex items-center gap-1.5 uppercase transition ${
-            buttonState === 'ON'
+        {/* Live Status Pill */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => checkStatusFromDatabase(false)}
+            disabled={isChecking}
+            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg transition"
+            title="Re-check database registration"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isChecking ? 'animate-spin' : ''}`} />
+          </button>
+          <span className={`text-xs font-black px-3 py-1 rounded-full border flex items-center gap-1.5 transition ${
+            status === 'VERIFIED'
               ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-              : buttonState === 'DENIED'
-              ? 'bg-rose-100 text-rose-800 border-rose-300'
-              : buttonState === 'ERROR'
+              : status === 'REGISTERING'
               ? 'bg-amber-100 text-amber-900 border-amber-300'
-              : 'bg-slate-100 text-slate-600 border-slate-300'
-          }`}
-        >
-          {buttonState === 'ON' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
-          {buttonState === 'ACTIVATING' && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />}
-          {isCheckingDb && buttonState !== 'ACTIVATING' && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />}
-          {buttonState === 'DENIED' && <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
-          {buttonState === 'ERROR' && <AlertCircle className="w-3.5 h-3.5 text-amber-600" />}
-          <span>
-            {buttonState === 'ON'
-              ? t.alertsOnBtn
-              : buttonState === 'DENIED'
-              ? 'BLOCKED'
-              : buttonState === 'ACTIVATING'
-              ? 'ACTIVATING'
-              : buttonState === 'ERROR'
-              ? 'ERROR'
-              : t.alertsOffBtn}
+              : status === 'PERMISSION_DENIED'
+              ? 'bg-rose-100 text-rose-800 border-rose-300'
+              : status === 'REGISTRATION_FAILED'
+              ? 'bg-rose-100 text-rose-800 border-rose-300'
+              : 'bg-slate-100 text-slate-700 border-slate-300'
+          }`}>
+            {status === 'VERIFIED' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+            {status === 'REGISTERING' && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />}
+            {status === 'PERMISSION_DENIED' && <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
+            {status === 'REGISTRATION_FAILED' && <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />}
+            <span>
+              {status === 'VERIFIED'
+                ? 'VERIFIED'
+                : status === 'REGISTERING'
+                ? 'REGISTERING'
+                : status === 'PERMISSION_DENIED'
+                ? 'BLOCKED'
+                : status === 'REGISTRATION_FAILED'
+                ? 'FAILED'
+                : 'NOT REGISTERED'}
+            </span>
           </span>
-        </span>
+        </div>
       </div>
 
-      {/* Main Single Action Button */}
-      <div>
-        {buttonState === 'ON' ? (
-          /* When ON: Large Green Button */
+      {/* Status Description Box */}
+      <div className={`p-3.5 rounded-2xl border text-xs leading-relaxed ${
+        status === 'VERIFIED'
+          ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+          : status === 'PERMISSION_DENIED'
+          ? 'bg-rose-50 border-rose-200 text-rose-950'
+          : status === 'REGISTRATION_FAILED'
+          ? 'bg-rose-50 border-rose-200 text-rose-950'
+          : status === 'REGISTERING'
+          ? 'bg-amber-50 border-amber-200 text-amber-950'
+          : 'bg-slate-50 border-slate-200 text-slate-800'
+      }`}>
+        <p className="font-bold flex items-center gap-1.5">
+          {status === 'VERIFIED' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />}
+          {status === 'REGISTERING' && <Loader2 className="w-4 h-4 animate-spin text-amber-600 shrink-0" />}
+          {status === 'PERMISSION_DENIED' && <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />}
+          {status === 'REGISTRATION_FAILED' && <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />}
+          {status === 'NOT_REGISTERED' && <Info className="w-4 h-4 text-slate-500 shrink-0" />}
+          <span>
+            {status === 'NOT_REGISTERED' && 'Your mobile is not registered for rain alerts.'}
+            {status === 'REGISTERING' && 'Registering your mobile. Please wait...'}
+            {status === 'VERIFIED' && 'Your mobile is successfully registered for rain alerts.'}
+            {status === 'PERMISSION_DENIED' && 'Notifications are blocked. Enable them in your browser settings.'}
+            {status === 'REGISTRATION_FAILED' && `Registration error: ${statusDetail}`}
+          </span>
+        </p>
+
+        {status === 'VERIFIED' && (
+          <p className="text-[11px] text-emerald-800 mt-1 font-medium">
+            {registrationNote}
+          </p>
+        )}
+      </div>
+
+      {/* Main Buttons Area */}
+      <div className="space-y-3">
+        {status === 'VERIFIED' ? (
+          /* When Verified: Test Notification Button + Turn Off Option */
           <div className="space-y-3">
-            <div className="w-full py-4 px-6 rounded-2xl font-black text-lg sm:text-xl tracking-wide shadow-lg bg-emerald-600 text-white flex items-center justify-center gap-3">
-              <ShieldCheck className="w-6 h-6 shrink-0" />
-              <span>{getButtonLabel()}</span>
-            </div>
+            {/* 1. Large Button: TEST NOTIFICATION ON MY MOBILE */}
+            <button
+              onClick={handleTestThisDevice}
+              disabled={isSendingDeviceTest}
+              className="w-full py-4 px-6 rounded-2xl font-black text-sm sm:text-base tracking-wide shadow-md bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-slate-950 transition flex items-center justify-center gap-2.5"
+            >
+              {isSendingDeviceTest ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <span>Checking push gateway...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-5 h-5" />
+                  <span>{testMyDeviceLabel}</span>
+                </>
+              )}
+            </button>
 
-            {/* Actions Strip: Send Test + Turn Off */}
-            <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
-              {/* Send Test Notification Button */}
-              <button
-                onClick={handleSendTest}
-                disabled={isSendingTest}
-                className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs transition active:scale-95 shadow flex items-center gap-2"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>
-                  {isSendingTest
-                    ? '...'
-                    : currentLang === 'te'
-                    ? '🔔 పరీక్షా నోటిఫికేషన్ పంపండి'
-                    : currentLang === 'kn'
-                    ? '🔔 ಟೆಸ್ಟ್ ನೋಟಿಫಿಕೇಶನ್ ಕಳುಹಿಸಿ'
-                    : '🔔 SEND TEST NOTIFICATION'}
-                </span>
-              </button>
+            {/* Test Notification Result Banner */}
+            {testResult && (
+              <div className={`p-3.5 rounded-2xl border text-xs space-y-1 ${
+                testResult.status === 'accepted'
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                  : 'bg-rose-50 border-rose-300 text-rose-950'
+              }`}>
+                <div className="font-bold flex items-center gap-1.5">
+                  {testResult.status === 'accepted' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  )}
+                  <span>
+                    {testResult.status === 'accepted' && 'Test notification request accepted by push service.'}
+                    {testResult.status === 'failed' && (testResult.message || 'Test notification failed.')}
+                    {testResult.status === 'subscription_expired' && 'Device subscription expired. Please re-register.'}
+                    {testResult.status === 'permission_denied' && 'Notification permission denied in browser.'}
+                    {testResult.status === 'device_not_registered' && 'Device not registered.'}
+                  </span>
+                </div>
+                {testResult.delivery_clarification && (
+                  <p className="text-[10.5px] text-slate-600 pt-0.5 leading-relaxed">
+                    <strong>Notice:</strong> {testResult.delivery_clarification}
+                  </p>
+                )}
+              </div>
+            )}
 
-              {/* Turn Off Button */}
+            {/* Turn Off Alerts Option */}
+            <div className="flex justify-end pt-1">
               <button
                 onClick={handleTurnOffAlerts}
-                className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-rose-600 hover:bg-rose-50 border border-slate-300 transition flex items-center gap-1.5"
+                className="px-3 py-1.5 text-xs text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl border border-slate-200 transition flex items-center gap-1.5"
               >
                 <PowerOff className="w-3.5 h-3.5" />
                 <span>
@@ -282,74 +378,124 @@ export const NotificationControl: React.FC<NotificationControlProps> = ({ curren
                     ? 'అలర్ట్‌లు ఆఫ్ చేయండి'
                     : currentLang === 'kn'
                     ? 'ಎಚ್ಚರಿಕೆಗಳನ್ನು ಆಫ್ ಮಾಡಿ'
-                    : 'Turn Off Alerts'}
+                    : 'Turn Off Rain Alerts'}
                 </span>
               </button>
             </div>
           </div>
         ) : (
-          /* When OFF, ACTIVATING, DENIED, or ERROR */
-          <button
-            onClick={buttonState === 'DENIED' ? undefined : handleTurnOnAlerts}
-            disabled={buttonState === 'ACTIVATING'}
-            className={`w-full py-4 px-6 rounded-2xl font-black text-base sm:text-lg tracking-wide transition active:scale-[0.98] shadow-sm flex items-center justify-center gap-3 ${
-              buttonState === 'ACTIVATING'
-                ? 'bg-amber-400 text-slate-950 cursor-wait'
-                : buttonState === 'DENIED'
-                ? 'bg-rose-100 text-rose-800 border-2 border-rose-300 cursor-not-allowed'
-                : buttonState === 'ERROR'
-                ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-2 border-amber-400'
-                : 'bg-slate-200 hover:bg-slate-300 text-slate-800 border-2 border-slate-300 shadow-slate-300/40'
-            }`}
-          >
-            {buttonState === 'ACTIVATING' ? (
-              <Loader2 className="w-6 h-6 animate-spin shrink-0" />
-            ) : buttonState === 'DENIED' || buttonState === 'ERROR' ? (
-              <AlertCircle className="w-6 h-6 shrink-0" />
-            ) : (
-              <Bell className="w-6 h-6 shrink-0 text-slate-600" />
+          /* When NOT registered or failed */
+          <div className="space-y-2">
+            <button
+              onClick={status === 'PERMISSION_DENIED' ? undefined : handleTurnOnAlerts}
+              disabled={status === 'REGISTERING'}
+              className={`w-full py-4 px-6 rounded-2xl font-black text-base sm:text-lg tracking-wide transition active:scale-[0.98] shadow-md flex items-center justify-center gap-3 ${
+                status === 'REGISTERING'
+                  ? 'bg-amber-400 text-slate-950 cursor-wait'
+                  : status === 'PERMISSION_DENIED'
+                  ? 'bg-rose-100 text-rose-800 border-2 border-rose-300 cursor-not-allowed'
+                  : 'bg-emerald-700 hover:bg-emerald-800 text-white'
+              }`}
+            >
+              {status === 'REGISTERING' ? (
+                <>
+                  <Loader2 className="w-6 h-6 animate-spin shrink-0" />
+                  <span>Registering...</span>
+                </>
+              ) : status === 'PERMISSION_DENIED' ? (
+                <>
+                  <AlertTriangle className="w-6 h-6 shrink-0" />
+                  <span>NOTIFICATIONS BLOCKED</span>
+                </>
+              ) : (
+                <>
+                  <Bell className="w-6 h-6 shrink-0" />
+                  <span>{turnOnLabel}</span>
+                </>
+              )}
+            </button>
+
+            {/* Retry Button if registration failed */}
+            {status === 'REGISTRATION_FAILED' && (
+              <div className="flex justify-center pt-1">
+                <button
+                  onClick={handleTurnOnAlerts}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Retry Registration</span>
+                </button>
+              </div>
             )}
-            <span>{getButtonLabel()}</span>
-          </button>
+          </div>
         )}
       </div>
 
-      {/* Denied Permission Helper Message */}
-      {buttonState === 'DENIED' && (
-        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-3.5 text-xs text-rose-900 flex items-start gap-2 font-medium">
-          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-          <div>
-            <strong className="block font-bold">
+      {/* Troubleshooting for Farmers Collapsible */}
+      <div className="border-t border-slate-100 pt-3">
+        <button
+          onClick={() => setShowTroubleshooting(!showTroubleshooting)}
+          className="w-full flex items-center justify-between text-xs font-bold text-slate-600 hover:text-slate-900 py-1 transition"
+        >
+          <span className="flex items-center gap-1.5">
+            <HelpCircle className="w-4 h-4 text-emerald-700" />
+            <span>
               {currentLang === 'te'
-                ? 'నోటిఫికేషన్లు బ్రౌజర్‌లో బ్లాక్ చేయబడ్డాయి.'
+                ? 'నోటిఫికేషన్ సమస్యలా? (సహాయం / ట్రబుల్షూటింగ్)'
                 : currentLang === 'kn'
-                ? 'ಬ್ರೌಸರ್‌ನಲ್ಲಿ ನೋಟಿಫಿಕೇಶನ್‌ಗಳನ್ನು ನಿರ್ಬಂಧಿಸಲಾಗಿದೆ.'
-                : 'Notifications are blocked in your browser.'}
-            </strong>
-            <span className="text-slate-600 mt-0.5 block">
-              {currentLang === 'te'
-                ? 'దయచేసి బ్రౌజర్ అడ్రస్ బార్‌లోని లాక్ (🔒) చిహ్నాన్ని నొక్కి, నోటిఫికేషన్లను "Allow" చేయండి.'
-                : currentLang === 'kn'
-                ? 'ದಯವಿಟ್ಟು ಬ್ರೌಸರ್ ಅಡ್ರೆಸ್ ಬಾರ್‌ನಲ್ಲಿರುವ ಲಾಕ್ (🔒) ಐಕಾನ್ ಕ್ಲಿಕ್ ಮಾಡಿ, ನೋಟಿಫಿಕೇಶನ್ "Allow" ಮಾಡಿ.'
-                : 'Please tap the lock (🔒) icon in the browser URL bar and set Notifications to "Allow".'}
+                ? 'ಸಂದೇಶ ಬರುತ್ತಿಲ್ಲವೇ? (ಸಮಸ್ಯೆ ಪರಿಹಾರ)'
+                : 'Not receiving notifications? (Troubleshooting for Farmers)'}
             </span>
+          </span>
+          {showTroubleshooting ? (
+            <ChevronUp className="w-4 h-4" />
+          ) : (
+            <ChevronDown className="w-4 h-4" />
+          )}
+        </button>
+
+        {showTroubleshooting && (
+          <div className="mt-3 p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-700 space-y-2.5 animate-in fade-in">
+            <p className="font-bold text-slate-900">
+              {currentLang === 'te'
+                ? 'నోటిఫికేషన్ రానిచో క్రింది విషయాలు సరిచూడండి:'
+                : currentLang === 'kn'
+                ? 'ಸಂದೇಶ ಬಾರದಿದ್ದರೆ ಈ ಕೆಳಗಿನವುಗಳನ್ನು ಪರಿಶೀಲಿಸಿ:'
+                : 'Follow this simple checklist if notifications are not arriving:'}
+            </p>
+            <ul className="space-y-1.5 list-disc pl-5 text-[11px] text-slate-600">
+              <li>
+                <strong>Browser Permission:</strong> Ensure notifications are set to "Allow" in your browser address bar (tap the 🔒 icon).
+              </li>
+              <li>
+                <strong>Internet Connection:</strong> Ensure your phone has active mobile data or Wi-Fi connectivity.
+              </li>
+              <li>
+                <strong>Service Worker:</strong> Raithu Alert background worker (<code className="font-mono text-[10px] bg-slate-200 px-1 rounded">/sw.js</code>) must be installed.
+              </li>
+              <li>
+                <strong>Database Subscription:</strong> Your device must show <strong className="text-emerald-700">VERIFIED</strong> status above.
+              </li>
+              <li>
+                <strong>Push Gateway:</strong> The push service (Google FCM) must accept the message request.
+              </li>
+            </ul>
+
+            <div className="pt-2 flex items-center justify-between flex-wrap gap-2 border-t border-slate-200">
+              <span className="text-[10px] text-slate-500 font-mono">
+                Endpoint: {deviceInfo?.endpoint ? `${deviceInfo.endpoint.slice(0, 35)}...` : 'Not saved'}
+              </span>
+              <button
+                onClick={() => checkStatusFromDatabase(false)}
+                className="px-3 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg text-slate-800 font-bold text-xs flex items-center gap-1.5 transition shadow-xs"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Re-Check Status</span>
+              </button>
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Progress / Status Message feedback */}
-      {statusMessage && (
-        <p className="text-xs font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-          {statusMessage}
-        </p>
-      )}
-
-      {/* Test Notification confirmation message */}
-      {testSentMessage && (
-        <p className="text-xs font-bold text-emerald-800 bg-emerald-50 p-2.5 rounded-xl border border-emerald-300 animate-pulse">
-          {testSentMessage}
-        </p>
-      )}
+        )}
+      </div>
     </section>
   );
 };

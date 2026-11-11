@@ -318,20 +318,20 @@ export default function Home() {
               }}
             />
 
-            {/* 3: HOURLY WEATHER FORECAST (Directly after rain status with dynamic icons) */}
+            {/* 3: STAY UPDATED WITH RAIN ALERTS (Home Screen Mobile Registration & Device Test) */}
+            <NotificationControl
+              currentLang={currentLang}
+            />
+
+            {/* 4: HOURLY WEATHER FORECAST (Directly after rain alerts with dynamic icons) */}
             <HourlyTimeline
               weather={weatherState}
               currentLang={currentLang}
             />
 
-            {/* 4: 10-DAY FORECAST (Directly below hourly timeline) */}
+            {/* 5: 10-DAY FORECAST (Directly below hourly timeline) */}
             <TenDayForecast
               days={weatherState.daily10d || []}
-              currentLang={currentLang}
-            />
-
-            {/* 5: RAIN ALERTS (Notification control) */}
-            <NotificationControl
               currentLang={currentLang}
             />
 

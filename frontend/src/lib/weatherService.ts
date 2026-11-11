@@ -1045,6 +1045,80 @@ export async function unsubscribePushNotification(): Promise<{ success: boolean;
   }
 }
 
+export interface DeviceTestPushResult {
+  status: 'accepted' | 'failed' | 'subscription_expired' | 'permission_denied' | 'device_not_registered';
+  message: string;
+  delivery_clarification?: string;
+  endpoint?: string;
+}
+
+export async function sendTestNotificationToThisDevice(language: string = 'te'): Promise<DeviceTestPushResult> {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return {
+      status: 'failed',
+      message: 'Browser does not support notifications.'
+    };
+  }
+
+  if (Notification.permission === 'denied') {
+    return {
+      status: 'permission_denied',
+      message: 'Notification permission denied in browser settings.'
+    };
+  }
+
+  let endpoint = '';
+  if ('serviceWorker' in navigator) {
+    try {
+      const swReg = await navigator.serviceWorker.getRegistration();
+      if (swReg && 'pushManager' in swReg) {
+        const sub = await swReg.pushManager.getSubscription();
+        if (sub && sub.endpoint) {
+          endpoint = sub.endpoint;
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!endpoint && typeof window !== 'undefined') {
+    endpoint = localStorage.getItem('kadlur_rain_alerts_endpoint') || '';
+  }
+
+  if (!endpoint) {
+    return {
+      status: 'device_not_registered',
+      message: 'Device not registered. Please tap "TURN ON RAIN ALERTS" first.'
+    };
+  }
+
+  const apiBase = getApiBaseUrl();
+  try {
+    const res = await withTimeout(
+      fetch(`${apiBase}/api/v1/alerts/test-device-push`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint, language })
+      }),
+      12000,
+      'Test notification request timed out'
+    );
+
+    if (res.ok) {
+      return await res.json();
+    } else {
+      return {
+        status: 'failed',
+        message: `Test notification failed (Server returned status ${res.status}).`
+      };
+    }
+  } catch (err: any) {
+    return {
+      status: 'failed',
+      message: `Test notification failed: ${err.message || 'Network error'}`
+    };
+  }
+}
+
 // Dispatch Real Test Notification to verify farmer's phone/browser
 export async function sendTestNotification(language: string = 'te'): Promise<{ success: boolean; message: string }> {
   const titles: Record<string, { title: string; body: string }> = {

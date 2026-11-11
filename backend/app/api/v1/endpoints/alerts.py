@@ -209,6 +209,126 @@ def unsubscribe_notification_token(payload: Dict[str, Any], db: Session = Depend
                 db.rollback()
     return {"status": "success", "message": "Unsubscribed from Kadlur rain alerts."}
 
+@router.post("/test-device-push")
+def test_device_push(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    """
+    Sends a real Web Push test notification ONLY to the requesting device.
+    Does NOT broadcast to any other subscribers.
+    Does NOT require an admin key.
+    Returns honest gateway acceptance status.
+    """
+    endpoint = payload.get("endpoint") or payload.get("token")
+    if not endpoint:
+        return {
+            "status": "device_not_registered",
+            "message": "Device not registered. Please enable rain alerts first."
+        }
+
+    # Query subscription from database
+    sub = db.query(PushSubscriptionRecord).filter(
+        PushSubscriptionRecord.endpoint == endpoint
+    ).first()
+
+    if not sub or not sub.is_active:
+        return {
+            "status": "device_not_registered",
+            "message": "Device not registered in database. Please click 'TURN ON RAIN ALERTS' to register."
+        }
+
+    if not sub.p256dh or not sub.auth:
+        return {
+            "status": "failed",
+            "message": "Device keys missing from subscription record. Please re-register your device."
+        }
+
+    language = payload.get("language") or sub.language or "te"
+    
+    # Message content in farmer's language
+    bodies = {
+        "te": "ఇది మీ మొబైల్ కోసం పరీక్షా నోటిఫికేషన్. కడ్లూరు వర్ష అలర్ట్ వ్యవస్థ సరిగ్గా పనిచేస్తోంది.",
+        "kn": "ಇದು ನಿಮ್ಮ ಮೊಬೈಲ್‌ಗಾಗಿ ಪರೀಕ್ಷಾ ಸಂದೇಶ. ಕಡ್ಲೂರು ಮಳೆ ಅಲರ್ಟ್ ವ್ಯವಸ್ಥೆ ಸರಿಯಾಗಿ ಕಾರ್ಯನಿರ್ವಹಿಸುತ್ತಿದೆ.",
+        "en": "This is a test notification for your mobile. Your Raithu Alert notification system is working."
+    }
+    body_text = bodies.get(language, bodies["te"])
+
+    notification_payload = {
+        "title": "Raithu Alert — Test Notification",
+        "body": body_text,
+        "icon": "/icon-192.png",
+        "badge": "/icon-192.png",
+        "tag": f"raithu-device-test-{int(time.time())}",
+        "type": "DEVICE_TEST_NOTIFICATION",
+        "vibrate": [200, 100, 200],
+        "silent": False,
+        "requireInteraction": False,
+        "url": "/"
+    }
+    notification_json = json.dumps(notification_payload)
+
+    vapid_private_key = getattr(settings, "VAPID_PRIVATE_KEY", None)
+    vapid_claim_email = getattr(settings, "VAPID_CLAIM_EMAIL", "admin@kadlur-weather.org")
+    sub_claim = f"mailto:{vapid_claim_email}" if not vapid_claim_email.startswith("mailto:") else vapid_claim_email
+    vapid_claims = {"sub": sub_claim}
+
+    if webpush is None:
+        return {
+            "status": "failed",
+            "message": "Test notification failed: pywebpush library not loaded on server."
+        }
+
+    sub_info = {
+        "endpoint": sub.endpoint,
+        "keys": {
+            "p256dh": sub.p256dh,
+            "auth": sub.auth
+        }
+    }
+
+    try:
+        res = webpush(
+            subscription_info=sub_info,
+            data=notification_json,
+            vapid_private_key=vapid_private_key,
+            vapid_claims=vapid_claims,
+            ttl=120,
+            timeout=10
+        )
+        status_code = getattr(res, "status_code", 201)
+        if status_code in [200, 201]:
+            return {
+                "status": "accepted",
+                "message": "Test notification request accepted by push service.",
+                "delivery_clarification": "Google FCM / push gateway accepted the notification request. Gateway acceptance does not prove that the phone displayed the notification (depends on device power saving, lock screen settings, and internet connection).",
+                "endpoint": endpoint
+            }
+        else:
+            return {
+                "status": "failed",
+                "message": f"Push gateway returned unexpected status code {status_code}."
+            }
+    except WebPushException as ex:
+        res_status = getattr(ex.response, "status_code", None) if hasattr(ex, "response") else None
+        if res_status in [404, 410]:
+            sub.is_active = False
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+            return {
+                "status": "subscription_expired",
+                "message": "Device subscription expired. Please re-subscribe by clicking 'TURN ON RAIN ALERTS'."
+            }
+        else:
+            return {
+                "status": "failed",
+                "message": f"Test notification failed: HTTP {res_status or 'error'} from push gateway."
+            }
+    except Exception as e:
+        return {
+            "status": "failed",
+            "message": f"Test notification failed: {str(e)}"
+        }
+
 @router.post("/test-alert")
 def trigger_test_alert(payload: Dict[str, Any]):
     """
