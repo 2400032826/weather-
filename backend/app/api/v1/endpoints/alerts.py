@@ -64,6 +64,7 @@ def get_vapid_public_key():
 def check_subscription_status(endpoint: str, db: Session = Depends(get_db)):
     """
     Verifies that a push subscription endpoint is actively registered in database.
+    Returns rich verification details for the client.
     """
     sub = db.query(PushSubscriptionRecord).filter(
         PushSubscriptionRecord.endpoint == endpoint,
@@ -73,6 +74,9 @@ def check_subscription_status(endpoint: str, db: Session = Depends(get_db)):
         "is_subscribed": bool(sub),
         "endpoint": endpoint,
         "language": sub.language if sub else None,
+        "has_keys": bool(sub.p256dh and sub.auth) if sub else False,
+        "device_type": sub.device_type if sub else None,
+        "created_at": sub.created_at.isoformat() if sub and sub.created_at else None,
         "village": "Kadlur, Raichur"
     }
 
@@ -80,9 +84,16 @@ def check_subscription_status(endpoint: str, db: Session = Depends(get_db)):
 def register_notification_token(payload: Dict[str, Any], db: Session = Depends(get_db)):
     """
     Endpoint for browser push notifications or Firebase Cloud Messaging (FCM).
-    Stores token associated exclusively with Kadlur weather alert broadcasts.
+    Stores and commits token associated exclusively with Kadlur weather alert broadcasts.
+    Strictly verifies persistence before returning success.
     """
-    endpoint = payload.get("token") or payload.get("endpoint") or f"client_{datetime.utcnow().timestamp()}"
+    endpoint = payload.get("token") or payload.get("endpoint")
+    if not endpoint:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing required subscription endpoint/token"
+        )
+
     device_type = payload.get("device_type", "browser")
     language = payload.get("language", "te")
     p256dh = payload.get("keys", {}).get("p256dh") if isinstance(payload.get("keys"), dict) else payload.get("p256dh")
@@ -92,6 +103,12 @@ def register_notification_token(payload: Dict[str, Any], db: Session = Depends(g
     if existing:
         existing.is_active = True
         existing.language = language
+        if p256dh:
+            existing.p256dh = p256dh
+        if auth:
+            existing.auth = auth
+        if device_type:
+            existing.device_type = device_type
     else:
         new_sub = PushSubscriptionRecord(
             endpoint=endpoint,
@@ -102,13 +119,36 @@ def register_notification_token(payload: Dict[str, Any], db: Session = Depends(g
             is_active=True
         )
         db.add(new_sub)
+
     try:
         db.commit()
-    except Exception:
+    except Exception as e:
         db.rollback()
+        logger.error(f"Failed to persist subscription for {endpoint}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database persistence failure: {str(e)}"
+        )
+
+    # Verification: Ensure record actually exists and is active in database
+    verified_sub = db.query(PushSubscriptionRecord).filter(
+        PushSubscriptionRecord.endpoint == endpoint,
+        PushSubscriptionRecord.is_active == True
+    ).first()
+
+    if not verified_sub:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database verification failed: Subscription record could not be confirmed after commit."
+        )
 
     return {
         "status": "success",
+        "is_persisted": True,
+        "endpoint": endpoint,
+        "device_type": device_type,
+        "language": language,
+        "has_keys": bool(p256dh and auth),
         "message": f"Successfully registered {device_type} notification token for Kadlur alerts in {language}.",
         "village": "Kadlur, Raichur"
     }

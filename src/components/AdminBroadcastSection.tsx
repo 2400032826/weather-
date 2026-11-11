@@ -9,12 +9,17 @@ import {
   Volume2, 
   Loader2, 
   RefreshCw,
-  Info
+  Info,
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
 import { 
   sendAdminBroadcastTest, 
   fetchAdminSubscribersCount, 
-  type AdminBroadcastResult 
+  checkDeviceSubscriptionStatus,
+  registerPushNotification,
+  type AdminBroadcastResult,
+  type DeviceSubscriptionInfo
 } from '../lib/weatherService';
 
 export const AdminBroadcastSection: React.FC = () => {
@@ -22,13 +27,32 @@ export const AdminBroadcastSection: React.FC = () => {
   const [showKeyInput, setShowKeyInput] = useState<boolean>(false);
   const [counts, setCounts] = useState<{ active_subscribers: number; total_registered: number; inactive_or_expired: number } | null>(null);
   const [loadingCounts, setLoadingCounts] = useState<boolean>(false);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceSubscriptionInfo | null>(null);
+  const [isCheckingDevice, setIsCheckingDevice] = useState<boolean>(false);
+  const [isRegisteringDevice, setIsRegisteringDevice] = useState<boolean>(false);
+  const [deviceRegisterMsg, setDeviceRegisterMsg] = useState<string | null>(null);
+
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
   const [isSending, setIsSending] = useState<boolean>(false);
   const [result, setResult] = useState<AdminBroadcastResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
 
-  // Load subscriber counts on mount or adminKey change
+  // Check current device subscription status in database
+  const refreshDeviceStatus = async () => {
+    setIsCheckingDevice(true);
+    setDeviceRegisterMsg(null);
+    try {
+      const info = await checkDeviceSubscriptionStatus('te', false);
+      setDeviceInfo(info);
+    } catch (e: any) {
+      console.warn('Device status check note:', e);
+    } finally {
+      setIsCheckingDevice(false);
+    }
+  };
+
+  // Load subscriber counts from production database
   const refreshCounts = async () => {
     setLoadingCounts(true);
     try {
@@ -43,7 +67,26 @@ export const AdminBroadcastSection: React.FC = () => {
 
   useEffect(() => {
     refreshCounts();
+    refreshDeviceStatus();
   }, [adminKey]);
+
+  // Handle immediate registration of this device with database confirmation
+  const handleRegisterThisDevice = async () => {
+    setIsRegisteringDevice(true);
+    setDeviceRegisterMsg('Requesting permission and registering in database...');
+    try {
+      const res = await registerPushNotification('te', (step) => {
+        setDeviceRegisterMsg(step);
+      });
+      setDeviceRegisterMsg(res.message);
+      await refreshCounts();
+      await refreshDeviceStatus();
+    } catch (err: any) {
+      setDeviceRegisterMsg(`Registration error: ${err.message || 'Failed'}`);
+    } finally {
+      setIsRegisteringDevice(false);
+    }
+  };
 
   // Cooldown countdown timer
   useEffect(() => {
@@ -73,6 +116,8 @@ export const AdminBroadcastSection: React.FC = () => {
     }
   };
 
+  const hasSubscribers = counts !== null && counts.active_subscribers > 0;
+
   return (
     <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-4 text-xs">
       {/* Header */}
@@ -94,26 +139,92 @@ export const AdminBroadcastSection: React.FC = () => {
         {/* Subscriber counter badge */}
         <div className="flex items-center gap-2">
           <button
-            onClick={refreshCounts}
-            disabled={loadingCounts}
+            onClick={() => { refreshCounts(); refreshDeviceStatus(); }}
+            disabled={loadingCounts || isCheckingDevice}
             className="p-1.5 text-slate-500 hover:text-slate-800 rounded-lg hover:bg-slate-200 transition"
-            title="Refresh subscriber count"
+            title="Refresh subscriber count and device status"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loadingCounts ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingCounts || isCheckingDevice ? 'animate-spin' : ''}`} />
           </button>
           <div className="bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-xs flex items-center gap-1.5 font-mono text-[11px]">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+            <span className={`w-2 h-2 rounded-full ${hasSubscribers ? 'bg-emerald-500 animate-ping' : 'bg-amber-400'}`} />
             <span className="text-slate-600">Active Subscribers:</span>
-            <span className="font-bold text-slate-900">
+            <span className={`font-bold ${hasSubscribers ? 'text-emerald-700' : 'text-amber-800'}`}>
               {counts ? counts.active_subscribers : '—'}
             </span>
           </div>
         </div>
       </div>
 
+      {/* 1. Device Subscription Verification Card */}
+      <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-2.5">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-4 h-4 text-slate-700" />
+            <strong className="text-xs text-slate-900">Your Current Device Status</strong>
+          </div>
+          <button
+            onClick={refreshDeviceStatus}
+            disabled={isCheckingDevice}
+            className="text-[11px] text-slate-500 hover:text-slate-800 underline font-medium"
+          >
+            {isCheckingDevice ? 'Checking database...' : 'Verify Status'}
+          </button>
+        </div>
+
+        <div className="text-[11px]">
+          {deviceInfo?.databaseVerified ? (
+            <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 flex items-start gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">✓ This device is subscribed and verified in the production database.</p>
+                <p className="text-[10px] text-emerald-700 font-mono break-all mt-0.5">
+                  Endpoint: {deviceInfo.endpoint ? `${deviceInfo.endpoint.slice(0, 45)}...` : 'Active'}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Current Device Not Confirmed in Database</p>
+                  <p className="text-[10.5px] text-amber-800 mt-0.5">
+                    {deviceInfo?.message || 'Push subscription has not been saved or verified in the database.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleRegisterThisDevice}
+                disabled={isRegisteringDevice}
+                className="w-full sm:w-auto px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-[11px] flex items-center justify-center gap-1.5 transition shadow-xs"
+              >
+                {isRegisteringDevice ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Registering with Database...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>Subscribe &amp; Confirm This Device Now</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {deviceRegisterMsg && (
+            <p className="text-[11px] font-semibold text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-200 mt-2">
+              {deviceRegisterMsg}
+            </p>
+          )}
+        </div>
+      </div>
+
       {/* Admin Key Toggle & Configuration */}
       <div className="flex items-center justify-between text-[11px] text-slate-500">
-        <span>Admin Gateway Protection: <strong className="text-emerald-700">Authenticated (X-Admin-Key)</strong></span>
+        <span>Admin Protection: <strong className="text-emerald-700">Authenticated (X-Admin-Key)</strong></span>
         <button 
           onClick={() => setShowKeyInput(!showKeyInput)}
           className="text-emerald-600 hover:underline font-semibold"
@@ -137,39 +248,60 @@ export const AdminBroadcastSection: React.FC = () => {
         </div>
       )}
 
-      {/* Main Broadcast Trigger Action */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-3.5 bg-white rounded-xl border border-slate-200">
-        <div className="space-y-0.5">
-          <p className="font-bold text-slate-800 text-xs">
-            Push Notification Verification
-          </p>
-          <p className="text-[11px] text-slate-500">
-            Sends exactly one non-rain test notification using standard OS sound.
-          </p>
+      {/* 2. Main Broadcast Trigger Action */}
+      <div className="p-3.5 bg-white rounded-xl border border-slate-200 space-y-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <p className="font-bold text-slate-800 text-xs">
+              Push Notification Broadcast Test
+            </p>
+            <p className="text-[11px] text-slate-500">
+              Sends exactly one non-rain test notification using standard OS sound.
+            </p>
+          </div>
+
+          <button
+            onClick={() => setShowConfirmModal(true)}
+            disabled={!hasSubscribers || isSending || cooldownSeconds > 0}
+            className={`px-4 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition shadow-sm ${
+              !hasSubscribers
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed border border-slate-300'
+                : 'bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 text-white'
+            }`}
+          >
+            {isSending ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Dispatching...</span>
+              </>
+            ) : cooldownSeconds > 0 ? (
+              <>
+                <Clock className="w-4 h-4" />
+                <span>Cooldown ({cooldownSeconds}s)</span>
+              </>
+            ) : !hasSubscribers ? (
+              <>
+                <Lock className="w-4 h-4" />
+                <span>Broadcast Locked (0 Subscribers)</span>
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4" />
+                <span>Send Test Notification to All Subscribers</span>
+              </>
+            )}
+          </button>
         </div>
 
-        <button
-          onClick={() => setShowConfirmModal(true)}
-          disabled={isSending || cooldownSeconds > 0}
-          className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-800 disabled:bg-slate-300 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition shadow-sm"
-        >
-          {isSending ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Dispatching...</span>
-            </>
-          ) : cooldownSeconds > 0 ? (
-            <>
-              <Clock className="w-4 h-4" />
-              <span>Cooldown ({cooldownSeconds}s)</span>
-            </>
-          ) : (
-            <>
-              <Send className="w-4 h-4" />
-              <span>Send Test Notification to All Subscribers</span>
-            </>
-          )}
-        </button>
+        {/* Database verification lock explanation */}
+        {!hasSubscribers && (
+          <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-[11px] flex items-start gap-2">
+            <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+            <p>
+              <strong>Broadcast is locked:</strong> The production database currently has <strong>0 active subscribers</strong>. Please click "Subscribe &amp; Confirm This Device Now" above to register your Android device in the database before broadcasting.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Error Notice */}

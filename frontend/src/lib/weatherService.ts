@@ -684,7 +684,151 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export type NotificationButtonState = 'OFF' | 'ACTIVATING' | 'ON' | 'DENIED' | 'ERROR';
 
-// Background Push Notification & Service Worker Registration with strict timeouts and verification
+export interface DeviceSubscriptionInfo {
+  supported: boolean;
+  permission: NotificationPermission | 'unsupported';
+  isSubscribed: boolean;
+  endpoint: string | null;
+  databaseVerified: boolean;
+  message: string;
+}
+
+// Check device subscription status and optionally auto-synchronize to backend
+export async function checkDeviceSubscriptionStatus(
+  language: string = 'te',
+  autoSync: boolean = true
+): Promise<DeviceSubscriptionInfo> {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return {
+      supported: false,
+      permission: 'unsupported',
+      isSubscribed: false,
+      endpoint: null,
+      databaseVerified: false,
+      message: 'Browser does not support web push notifications.'
+    };
+  }
+
+  const perm = Notification.permission;
+  if (perm !== 'granted') {
+    return {
+      supported: true,
+      permission: perm,
+      isSubscribed: false,
+      endpoint: null,
+      databaseVerified: false,
+      message: perm === 'denied' ? 'Notifications blocked in browser settings.' : 'Notifications not enabled.'
+    };
+  }
+
+  if (!('serviceWorker' in navigator)) {
+    return {
+      supported: true,
+      permission: perm,
+      isSubscribed: false,
+      endpoint: null,
+      databaseVerified: false,
+      message: 'Service Worker not supported.'
+    };
+  }
+
+  try {
+    const swReg = await navigator.serviceWorker.getRegistration();
+    if (!swReg || !('pushManager' in swReg)) {
+      return {
+        supported: true,
+        permission: perm,
+        isSubscribed: false,
+        endpoint: null,
+        databaseVerified: false,
+        message: 'PushManager not initialized.'
+      };
+    }
+
+    const sub = await swReg.pushManager.getSubscription();
+    if (!sub) {
+      if (autoSync) {
+        const regRes = await registerPushNotification(language);
+        return {
+          supported: true,
+          permission: perm,
+          isSubscribed: regRes.success,
+          endpoint: typeof window !== 'undefined' ? localStorage.getItem('kadlur_rain_alerts_endpoint') : null,
+          databaseVerified: regRes.success,
+          message: regRes.message
+        };
+      }
+      return {
+        supported: true,
+        permission: perm,
+        isSubscribed: false,
+        endpoint: null,
+        databaseVerified: false,
+        message: 'No active push subscription in browser.'
+      };
+    }
+
+    const endpoint = sub.endpoint;
+    const apiBase = getApiBaseUrl();
+
+    // Verify with backend check-subscription endpoint
+    const verifyRes = await withTimeout(
+      fetch(`${apiBase}/api/v1/alerts/check-subscription?endpoint=${encodeURIComponent(endpoint)}`),
+      8000,
+      'Backend subscription verification check timed out'
+    );
+
+    if (verifyRes.ok) {
+      const data = await verifyRes.json();
+      if (data.is_subscribed) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('kadlur_rain_alerts_enabled', 'true');
+          localStorage.setItem('kadlur_rain_alerts_endpoint', endpoint);
+          localStorage.setItem('kadlur_rain_alerts_verified', 'true');
+        }
+        return {
+          supported: true,
+          permission: perm,
+          isSubscribed: true,
+          endpoint: endpoint,
+          databaseVerified: true,
+          message: '✓ Verified: Active and confirmed in production database.'
+        };
+      } else if (autoSync) {
+        // Subscription exists in browser, but was lost or missing in backend DB -> auto-sync!
+        const syncRes = await registerPushNotification(language);
+        return {
+          supported: true,
+          permission: perm,
+          isSubscribed: syncRes.success,
+          endpoint: endpoint,
+          databaseVerified: syncRes.success,
+          message: syncRes.message
+        };
+      }
+    }
+
+    return {
+      supported: true,
+      permission: perm,
+      isSubscribed: true,
+      endpoint: endpoint,
+      databaseVerified: false,
+      message: 'Push endpoint active in browser, awaiting database sync.'
+    };
+  } catch (err: any) {
+    return {
+      supported: true,
+      permission: perm,
+      isSubscribed: false,
+      endpoint: null,
+      databaseVerified: false,
+      message: err.message || 'Status check failed'
+    };
+  }
+}
+
+// Background Push Notification & Service Worker Registration with strict verification
 export async function registerPushNotification(
   language: string = 'te',
   onProgress?: (stepMsg: string) => void
@@ -698,14 +842,14 @@ export async function registerPushNotification(
   }
 
   try {
-    // Step 1 & 2: Ask for notification permission with timeout
-    onProgress?.('Requesting permission...');
+    // Step 1: Request Notification Permission
+    onProgress?.('Step 1/5: Requesting notification permission...');
     let perm: NotificationPermission = Notification.permission;
     if (perm !== 'granted') {
       perm = await withTimeout(
         Notification.requestPermission(),
-        8000,
-        'Notification permission request timed out'
+        15000,
+        'Notification permission request timed out. Please tap Allow.'
       );
     }
 
@@ -713,7 +857,7 @@ export async function registerPushNotification(
       return {
         success: false,
         state: 'DENIED',
-        message: 'Notifications blocked. Please enable them in your browser settings.'
+        message: 'Notifications blocked. Please enable them in your browser/site settings.'
       };
     }
 
@@ -725,118 +869,136 @@ export async function registerPushNotification(
       };
     }
 
-    // Step 3: Register Service Worker
-    onProgress?.('Registering service worker...');
-    let swReg: ServiceWorkerRegistration | null = null;
-    let endpointUrl = `browser_kadlur_${Date.now()}`;
-    let p256dhKey: string | null = null;
-    let authKey: string | null = null;
-
-    if ('serviceWorker' in navigator) {
-      try {
-        await withTimeout(
-          navigator.serviceWorker.register('/sw.js'),
-          4000,
-          'Service worker registration timed out'
-        );
-        swReg = await withTimeout(
-          navigator.serviceWorker.ready,
-          4000,
-          'Service worker ready state timed out'
-        );
-      } catch (swErr) {
-        console.warn('SW registration fallback:', swErr);
-        swReg = (await navigator.serviceWorker.getRegistration()) || null;
-      }
-
-      // Step 4: Web Push subscription via PushManager
-      if (swReg && 'pushManager' in swReg) {
-        try {
-          // Fetch VAPID key
-          let vapidKey = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
-          const apiBase = getApiBaseUrl();
-          try {
-            const vRes = await withTimeout(
-              fetch(`${apiBase}/api/v1/alerts/vapid-public-key`),
-              3000,
-              'VAPID fetch timed out'
-            );
-            if (vRes.ok) {
-              const vData = await vRes.json();
-              if (vData.public_key) vapidKey = vData.public_key;
-            }
-          } catch (e) {}
-
-          const sub = await withTimeout(
-            swReg.pushManager.subscribe({
-              userVisibleOnly: true,
-              applicationServerKey: urlBase64ToUint8Array(vapidKey)
-            }),
-            5000,
-            'Push subscription timed out'
-          );
-
-          if (sub) {
-            endpointUrl = sub.endpoint;
-            const subObj = sub.toJSON();
-            p256dhKey = subObj.keys?.p256dh || null;
-            authKey = subObj.keys?.auth || null;
-          }
-        } catch (pushErr) {
-          console.warn('PushManager note (fallback to local endpoint):', pushErr);
-        }
-      }
+    // Step 2: Register Service Worker
+    onProgress?.('Step 2/5: Registering background service worker...');
+    if (!('serviceWorker' in navigator)) {
+      throw new Error('Service Worker is not supported on this browser.');
     }
 
-    // Step 5: Save subscription with backend
-    onProgress?.('Saving subscription on server...');
-    let backendSaved = false;
+    await withTimeout(
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }),
+      10000,
+      'Service worker registration timed out'
+    );
+    const swReg = await withTimeout(
+      navigator.serviceWorker.ready,
+      10000,
+      'Service worker ready state timed out'
+    );
+
+    if (!swReg || !('pushManager' in swReg)) {
+      throw new Error('PushManager is not available in this browser environment.');
+    }
+
+    // Step 3: Retrieve VAPID Public Key
+    onProgress?.('Step 3/5: Retrieving VAPID encryption key...');
+    let vapidKey = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
     const apiBase = getApiBaseUrl();
     try {
-      const resp = await withTimeout(
-        fetch(`${apiBase}/api/v1/alerts/subscribe`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            token: endpointUrl,
-            endpoint: endpointUrl,
-            device_type: 'browser',
-            language: language,
-            keys: {
-              p256dh: p256dhKey,
-              auth: authKey
-            }
-          })
-        }),
-        4500,
-        'Backend connection timed out'
+      const vRes = await withTimeout(
+        fetch(`${apiBase}/api/v1/alerts/vapid-public-key`),
+        8000,
+        'VAPID key fetch timed out'
       );
-      if (resp.ok) {
-        backendSaved = true;
+      if (vRes.ok) {
+        const vData = await vRes.json();
+        if (vData.public_key) vapidKey = vData.public_key;
       }
-    } catch (apiErr) {
-      console.warn('Backend subscription note:', apiErr);
+    } catch (e) {
+      console.warn('VAPID fetch fallback:', e);
+    }
+
+    // Step 4: Web Push Subscription via PushManager
+    onProgress?.('Step 4/5: Subscribing device to push gateway (Google FCM)...');
+    let sub = await swReg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await withTimeout(
+        swReg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey)
+        }),
+        15000,
+        'Push gateway subscription timed out'
+      );
+    }
+
+    if (!sub || !sub.endpoint) {
+      throw new Error('Browser failed to generate a valid PushManager subscription endpoint.');
+    }
+
+    const endpointUrl = sub.endpoint;
+    const subObj = sub.toJSON();
+    const p256dhKey = subObj.keys?.p256dh || null;
+    const authKey = subObj.keys?.auth || null;
+
+    // Detect device type
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const deviceType = /Android/i.test(navigator.userAgent)
+      ? 'android_mobile'
+      : isMobile
+      ? 'ios_mobile'
+      : 'desktop_browser';
+
+    // Step 5: Save Subscription to Backend Database
+    onProgress?.('Step 5/5: Persisting subscription in production database...');
+    const resp = await withTimeout(
+      fetch(`${apiBase}/api/v1/alerts/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: endpointUrl,
+          endpoint: endpointUrl,
+          device_type: deviceType,
+          language: language,
+          keys: {
+            p256dh: p256dhKey,
+            auth: authKey
+          }
+        })
+      }),
+      15000,
+      'Production database connection timed out while saving subscription'
+    );
+
+    if (!resp.ok) {
+      const errJson = await resp.json().catch(() => ({}));
+      throw new Error(errJson.detail || `Server returned error ${resp.status} while saving subscription.`);
+    }
+
+    // Strict Step 6: Verify Database Persistence
+    onProgress?.('Verifying database persistence...');
+    const verifyRes = await withTimeout(
+      fetch(`${apiBase}/api/v1/alerts/check-subscription?endpoint=${encodeURIComponent(endpointUrl)}`),
+      10000,
+      'Database verification check timed out'
+    );
+
+    if (verifyRes.ok) {
+      const verifyData = await verifyRes.json();
+      if (!verifyData.is_subscribed) {
+        throw new Error('Database verification failed: Record was not found active after save.');
+      }
     }
 
     // Persist locally
     if (typeof window !== 'undefined') {
       localStorage.setItem('kadlur_rain_alerts_enabled', 'true');
       localStorage.setItem('kadlur_rain_alerts_endpoint', endpointUrl);
+      localStorage.setItem('kadlur_rain_alerts_verified', 'true');
+      localStorage.setItem('kadlur_rain_alerts_verified_at', new Date().toISOString());
     }
 
     return {
       success: true,
       state: 'ON',
-      message: backendSaved
-        ? '✓ Rain alerts activated and registered with backend!'
-        : '✓ Rain alerts activated on this device!'
+      message: '✓ Success: Device registered and confirmed in production database!'
     };
   } catch (err: any) {
-    console.error('Notification onboarding error:', err);
+    console.error('Notification registration error:', err);
     return {
       success: false,
       state: 'ERROR',
-      message: err?.message || 'Setup failed. Please try again.'
+      message: err?.message || 'Subscription failed. Please check connection and try again.'
     };
   }
 }

@@ -16,6 +16,7 @@ import {
   registerPushNotification,
   unsubscribePushNotification,
   sendTestNotification,
+  checkDeviceSubscriptionStatus,
 } from '../lib/weatherService';
 
 interface NotificationControlProps {
@@ -28,9 +29,11 @@ export const NotificationControl: React.FC<NotificationControlProps> = ({ curren
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [testSentMessage, setTestSentMessage] = useState<string | null>(null);
   const [isSendingTest, setIsSendingTest] = useState<boolean>(false);
+  const [isCheckingDb, setIsCheckingDb] = useState<boolean>(false);
 
-  // Initialize notification state safely on mount
+  // Initialize and verify database subscription safely on mount
   useEffect(() => {
+    let isMounted = true;
     if (typeof window === 'undefined') return;
 
     if (!('Notification' in window)) {
@@ -43,13 +46,32 @@ export const NotificationControl: React.FC<NotificationControlProps> = ({ curren
       return;
     }
 
-    const saved = localStorage.getItem('kadlur_rain_alerts_enabled');
-    if (saved === 'true' && Notification.permission === 'granted') {
-      setButtonState('ON');
-    } else {
-      setButtonState('OFF');
-    }
-  }, []);
+    setIsCheckingDb(true);
+    checkDeviceSubscriptionStatus(currentLang, true)
+      .then((info) => {
+        if (!isMounted) return;
+        setIsCheckingDb(false);
+        if (info.databaseVerified && info.isSubscribed) {
+          setButtonState('ON');
+          setStatusMessage('✓ Active: Registered and verified in production database');
+        } else if (Notification.permission === 'granted') {
+          setButtonState('OFF');
+          setStatusMessage(info.message);
+        } else {
+          setButtonState('OFF');
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setIsCheckingDb(false);
+          setButtonState('OFF');
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentLang]);
 
   // Main Action: Turn On Alerts (Step 1 to Step 6)
   const handleTurnOnAlerts = async () => {
@@ -202,6 +224,7 @@ export const NotificationControl: React.FC<NotificationControlProps> = ({ curren
         >
           {buttonState === 'ON' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
           {buttonState === 'ACTIVATING' && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />}
+          {isCheckingDb && buttonState !== 'ACTIVATING' && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />}
           {buttonState === 'DENIED' && <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
           {buttonState === 'ERROR' && <AlertCircle className="w-3.5 h-3.5 text-amber-600" />}
           <span>
