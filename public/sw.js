@@ -54,15 +54,18 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  // OS-supported high-priority notification options
-  // Dual-pulse urgent vibration pattern: 500ms buzz, 150ms pause, 500ms buzz, 150ms pause, 800ms buzz
+  // OS-supported notification options
+  const isAdminTest = data.type === 'ADMIN_TEST_NOTIFICATION' || (data.title && data.title.includes('Test Notification'));
+  
+  // For admin test: gentle vibration [200, 100, 200], short standard notification
+  // For rain alerts: urgent dual-pulse [500, 150, 500, 150, 800]
   const options = {
     body: data.body,
     icon: data.icon || '/icon-192.png',
     badge: data.badge || '/icon-192.png',
-    tag: data.tag || 'kadlur-rain-alert',
-    vibrate: [500, 150, 500, 150, 800],
-    requireInteraction: true,
+    tag: data.tag || (isAdminTest ? 'raithu-admin-test' : 'kadlur-rain-alert'),
+    vibrate: data.vibrate || (isAdminTest ? [200, 100, 200] : [500, 150, 500, 150, 800]),
+    requireInteraction: isAdminTest ? false : (data.requireInteraction ?? true),
     silent: false,
     data: {
       dateOfArrival: Date.now(),

@@ -5,6 +5,7 @@ import { translations } from '../lib/translations';
 import type { KadlurWeatherState } from '../lib/weatherService';
 import { SourceFreshness } from './SourceFreshness';
 import { KadlurGeographyCard } from './KadlurGeographyCard';
+import { AdminBroadcastSection } from './AdminBroadcastSection';
 
 interface DiagnosticsModalProps {
   isOpen: boolean;
@@ -80,7 +81,10 @@ export const DiagnosticsModal: React.FC<DiagnosticsModalProps> = ({
         {/* 2. Kadlur Geographical Specifications Verification */}
         <KadlurGeographyCard currentLang={currentLang} />
 
-        {/* 3. About & Developer Verification Section */}
+        {/* 3. Admin Push Notification Broadcast Test */}
+        <AdminBroadcastSection />
+
+        {/* 4. About & Developer Verification Section */}
         <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-slate-50 p-4 rounded-2xl border border-emerald-200/80 space-y-2 text-xs">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div>

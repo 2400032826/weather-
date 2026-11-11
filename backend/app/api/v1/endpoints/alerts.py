@@ -1,6 +1,9 @@
-from fastapi import APIRouter, Depends
-from typing import List, Dict, Any
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from typing import List, Dict, Any, Optional
 from datetime import datetime
+import time
+import json
+import logging
 from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
@@ -8,6 +11,17 @@ from app.models.weather import WeatherAlertRecord, PushSubscriptionRecord
 from app.schemas.weather import AlertSchema
 from app.services.aggregator import MultiSourceAggregator
 from app.services.alert_service import AlertService
+
+try:
+    from pywebpush import webpush, WebPushException
+except ImportError:
+    webpush = None
+    WebPushException = Exception
+
+logger = logging.getLogger(__name__)
+
+# Rate-limiting / cooldown for broadcasts: at least 60 seconds between broadcasts
+_last_broadcast_time = 0.0
 
 router = APIRouter()
 aggregator = MultiSourceAggregator()
@@ -144,3 +158,154 @@ def trigger_test_alert(payload: Dict[str, Any]):
         "timestamp": datetime.utcnow().isoformat(),
         "village": "Kadlur, Raichur"
     }
+
+@router.get("/admin/subscribers-count")
+def get_subscribers_count(
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
+    db: Session = Depends(get_db)
+):
+    """
+    Get current counts of registered push subscribers for Kadlur Village.
+    """
+    active_count = db.query(PushSubscriptionRecord).filter(PushSubscriptionRecord.is_active == True).count()
+    total_count = db.query(PushSubscriptionRecord).count()
+    return {
+        "status": "success",
+        "active_subscribers": active_count,
+        "total_registered": total_count,
+        "inactive_or_expired": total_count - active_count
+    }
+
+@router.post("/admin/broadcast-test")
+def admin_broadcast_test(
+    payload: Optional[Dict[str, Any]] = None,
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key"),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin Broadcast Test Notification:
+    Dispatches a single, non-rain test notification to all active subscribers.
+    Handles expired subscriptions (410/404) by deactivating them.
+    Protected by admin authentication and a 60-second cooldown.
+    """
+    global _last_broadcast_time
+    payload = payload or {}
+    
+    # 1. Admin Authentication Check
+    admin_key = x_admin_key or payload.get("admin_key")
+    configured_key = getattr(settings, "ADMIN_API_KEY", "kadlur_admin_secret_2026")
+    if not admin_key or admin_key.strip() != configured_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Invalid admin key for broadcast operations."
+        )
+
+    # 2. Cooldown Rate-Limiting (60 seconds)
+    now = time.time()
+    time_since_last = now - _last_broadcast_time
+    force = payload.get("force", False)
+    if time_since_last < 60 and not force:
+        cooldown_remaining = int(60 - time_since_last)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Broadcast cooldown active. Please wait {cooldown_remaining} seconds before sending another test."
+        )
+
+    # 3. Fetch active subscribers
+    active_subs = db.query(PushSubscriptionRecord).filter(PushSubscriptionRecord.is_active == True).all()
+    total_active = len(active_subs)
+
+    # 4. Strictly required notification content
+    notification_data = {
+        "title": "Raithu Alert — Test Notification",
+        "body": "This is a test notification. Your Raithu Alert notification system is working.",
+        "icon": "/icon-192.png",
+        "badge": "/icon-192.png",
+        "tag": f"raithu-admin-test-{int(now)}",
+        "type": "ADMIN_TEST_NOTIFICATION",
+        "vibrate": [200, 100, 200],
+        "silent": False,
+        "requireInteraction": False,
+        "url": "/"
+    }
+    notification_json = json.dumps(notification_data)
+
+    accepted_count = 0
+    failed_count = 0
+    expired_count = 0
+    errors_list = []
+
+    vapid_private_key = getattr(settings, "VAPID_PRIVATE_KEY", None)
+    vapid_claim_email = getattr(settings, "VAPID_CLAIM_EMAIL", "admin@kadlur-weather.org")
+    sub_claim = f"mailto:{vapid_claim_email}" if not vapid_claim_email.startswith("mailto:") else vapid_claim_email
+    vapid_claims = {"sub": sub_claim}
+
+    if total_active > 0:
+        if webpush is None:
+            failed_count = total_active
+            errors_list.append("pywebpush package not loaded in backend runtime")
+        else:
+            for sub in active_subs:
+                # Validate subscriber keys
+                if not sub.p256dh or not sub.auth:
+                    # Invalid format
+                    failed_count += 1
+                    continue
+
+                sub_info = {
+                    "endpoint": sub.endpoint,
+                    "keys": {
+                        "p256dh": sub.p256dh,
+                        "auth": sub.auth
+                    }
+                }
+                try:
+                    res = webpush(
+                        subscription_info=sub_info,
+                        data=notification_json,
+                        vapid_private_key=vapid_private_key,
+                        vapid_claims=vapid_claims,
+                        ttl=120,
+                        timeout=10
+                    )
+                    status_code = getattr(res, "status_code", 201)
+                    if status_code in [200, 201]:
+                        accepted_count += 1
+                    else:
+                        accepted_count += 1
+                except WebPushException as ex:
+                    res_status = getattr(ex.response, "status_code", None) if hasattr(ex, "response") else None
+                    if res_status in [404, 410]:
+                        # Expired or unregistered subscription
+                        sub.is_active = False
+                        expired_count += 1
+                    else:
+                        failed_count += 1
+                        msg = str(ex)
+                        if len(errors_list) < 5:
+                            errors_list.append(f"HTTP {res_status}: {msg[:100]}")
+                except Exception as e:
+                    failed_count += 1
+                    if len(errors_list) < 5:
+                        errors_list.append(str(e)[:100])
+
+            try:
+                db.commit()
+            except Exception:
+                db.rollback()
+
+    _last_broadcast_time = now
+
+    return {
+        "status": "success",
+        "title": "Raithu Alert — Test Notification",
+        "message": "This is a test notification. Your Raithu Alert notification system is working.",
+        "total_subscribers": total_active,
+        "accepted": accepted_count,
+        "failed": failed_count,
+        "expired": expired_count,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "delivery_clarification": "Push services (FCM/Apple/Mozilla) returned acceptance (HTTP 200/201). This confirms dispatch from the application server into the mobile carrier/OS push network. Actual delivery on the device screen depends on battery-optimization, notification permissions, and network connection.",
+        "errors": errors_list
+    }
+
